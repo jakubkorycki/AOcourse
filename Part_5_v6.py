@@ -216,9 +216,9 @@ fft_reversed_phase = fft_reversed.imag
 
 plt.imshow(np.sqrt(fft_reversed_mag**2+fft_reversed_phase**2))
 plt.show()
+#########
 
-
-#%%
+#%%ss
 
 def calc_B_matrix(reference_dots, n_modes):
     

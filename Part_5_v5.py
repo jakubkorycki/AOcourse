@@ -152,7 +152,7 @@ if __name__ == "__main__":
             optimized_act = np.loadtxt(f"C:\\AO-course-2024\\part_4\\last_x.dat")[0]
 #            optimized_act[0]=1
             dm.setActuators(optimized_act)
-            dm.setActuators(np.random.rand(19) * 2 - 1)
+            dm.setActuators(np.random.rand(19) * 1.6 - 0.8)
             time.sleep(0.2)
             random_img = normal_camera.grab_frames(4)[-1]
             random_SH_img = sh_camera.grab_frames(4)[-1]
@@ -182,7 +182,7 @@ if __name__ == "__main__":
     displacements_normalized = displacements / np.ptp(reference_dots, axis=0)
     displacements_normalized = displacements_normalized.flatten()
     
-    a, b = 2, 10
+    a, b = 2, 6
     zernike_gradients = np.zeros((b-a, len(reference_dots)*2))
     
     for i in range(a, b):
@@ -210,8 +210,12 @@ if __name__ == "__main__":
         phi += coefficient[l-2]*zernike_cartesian(n, m, X, Y)
     
     plt.figure()
-    plt.imshow(phi)
+    plt.imshow(phi, cmap='hsv')
     plt.colorbar()
+    plt.scatter(reference_dots[:, 0]*250+250, reference_dots[:, 1]*250+250, s=2, c='red')
+    plt.scatter(random_dots[:, 0]*250+250, random_dots[:, 1]*250+250, s=2, c='black')
+
+    plt.show()
     
     
     

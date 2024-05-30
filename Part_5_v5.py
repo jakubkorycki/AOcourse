@@ -126,6 +126,15 @@ def filter_points_by_neighbors(points, min_neighbours=4, neighbour_distance=65):
     filtered_points = points[neighbours_count >= min_neighbours]
     return filtered_points
 
+def normalize_dots_to_unit_circle(dots, padding=0.1, center =None, scale=None,):
+    if center is None:
+        center = np.mean(dots, axis=0)
+    dots_centered = dots - center
+    if scale is None:
+        scale = (1-padding)/np.max(np.sqrt(np.sum(dots_centered**2, axis=1)))
+    dots_scaled = dots_centered*scale
+    return dots_scaled, center, scale
+
 
 if __name__ == "__main__":
     plt.close('all')
@@ -159,6 +168,8 @@ if __name__ == "__main__":
 
     plt.clf()
     reference_dots, random_dots = NearestNeighbor(reference_dots, random_dots)
+    reference_dots, center, scale = normalize_dots_to_unit_circle(reference_dots)
+    random_dots, _, _ = normalize_dots_to_unit_circle(random_dots, center=center, scale=scale)
     print(len(reference_dots), len(random_dots))
     plot_displacement(reference_dots, random_dots)
     
@@ -171,7 +182,7 @@ if __name__ == "__main__":
     displacements_normalized = displacements / np.ptp(reference_dots, axis=0)
     displacements_normalized = displacements_normalized.flatten()
     
-    a, b = 2, 30
+    a, b = 2, 10
     zernike_gradients = np.zeros((b-a, len(reference_dots)*2))
     
     for i in range(a, b):
@@ -186,7 +197,7 @@ if __name__ == "__main__":
             j +=2
         
     B = np.linalg.pinv(zernike_gradients.T)
-    coefficient = B @ -displacements_normalized
+    coefficient = B @ displacements_normalized
     
     
     x = np.linspace(-1, 1, 500)

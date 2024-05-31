@@ -179,6 +179,46 @@ def reconstruct_wavefront(B, displacements, n_modes=10, gridsize=500):
         wavefront += coefficients[l-2]*zernike_cartesian(n, m, X, Y)
     return wavefront
 
+def create_C_matrix(dm, camera, reference_dots, voltage_step=0.5):
+    num_actuators = 19
+    num_dots = len(reference_dots)
+    C = np.zeros((num_dots * 2, num_actuators))
+
+    for i in range(num_actuators):
+        # Apply +voltage_step to the i-th actuator
+        act = np.zeros(num_actuators)
+        act[i] = voltage_step
+        dm.setActuators(act)
+        time.sleep(0.2)
+        positive_image = camera.grab_frames(4)[-1]
+        positive_dots = detect_blobs(positive_image, show=False)
+        positive_dots = filter_points_by_neighbors(positive_dots)
+        positive_dots, _ = NearestNeighbor(reference_dots, positive_dots)
+
+        # Apply -voltage_step to the i-th actuator
+        act[i] = -voltage_step
+        dm.setActuators(act)
+        time.sleep(0.2)
+        negative_image = camera.grab_frames(4)[-1]
+        negative_dots = detect_blobs(negative_image, show=False)
+        negative_dots = filter_points_by_neighbors(negative_dots)
+        negative_dots, _ = NearestNeighbor(reference_dots, negative_dots)
+
+        # Calculate slope differences
+        slope_x = (positive_dots[:, 0] - negative_dots[:, 0]) / (2 * voltage_step)
+        slope_y = (positive_dots[:, 1] - negative_dots[:, 1]) / (2 * voltage_step)
+        
+        C[:num_dots, i] = slope_x
+        C[num_dots:, i] = slope_y
+
+        # Reset the actuator to zero
+        act[i] = 0
+        dm.setActuators(act)
+        time.sleep(0.2)
+
+    np.savetxt("C_matrix.csv", C)
+    return C
+
 if __name__ == "__main__":
     plt.close('all')
     pixel_size = 5.2e-6

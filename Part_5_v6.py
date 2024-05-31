@@ -189,7 +189,7 @@ def create_C_matrix(dm, camera, reference_dots, voltage_step=0.5):
         act = np.zeros(num_actuators)
         act[i] = voltage_step
         dm.setActuators(act)
-        time.sleep(0.2)
+        time.sleep(0.1)
         positive_image = camera.grab_frames(4)[-1]
         positive_dots = detect_blobs(positive_image, show=False)
         positive_dots = filter_points_by_neighbors(positive_dots)
@@ -198,7 +198,7 @@ def create_C_matrix(dm, camera, reference_dots, voltage_step=0.5):
         # Apply -voltage_step to the i-th actuator
         act[i] = -voltage_step
         dm.setActuators(act)
-        time.sleep(0.2)
+        time.sleep(0.1)
         negative_image = camera.grab_frames(4)[-1]
         negative_dots = detect_blobs(negative_image, show=False)
         negative_dots = filter_points_by_neighbors(negative_dots)
@@ -233,7 +233,7 @@ if __name__ == "__main__":
 #        rand_act[-2:] = optimized_act[-2:]
         rand_act[:7] = -0.8
         dm.setActuators(rand_act)
-        time.sleep(0.2)
+        time.sleep(0.1)
         random_SH_img = sh_camera.grab_frames(4)[-1]
         random_dots = detect_blobs(random_SH_img, show=False)
         random_dots = filter_points_by_neighbors(random_dots)
@@ -244,6 +244,10 @@ if __name__ == "__main__":
         B = create_B_matrix(reference_dots_normalized, n_modes_B)
         gridsize = 500
         wavefront = reconstruct_wavefront(B, displacements, gridsize=gridsize)
+        
+        C_matrix = create_C_matrix(dm, sh_camera, reference_dots)
+        print("Influence matrix C has been calculated and saved.")
+        
         plt.figure()
         plt.imshow(wavefront, cmap='viridis')
         plt.colorbar()

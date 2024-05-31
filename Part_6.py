@@ -267,12 +267,8 @@ def converge_to_zernike(dm, camera, reference_grid, C, zernike_coeffs, n_modes, 
     for iteration in range(max_iterations):
         current_slopes = get_current_slopes(reference_grid, camera)
         current_grid = get_current_grid(camera)
-#        current_grid_norm
         reference_grid, current_grid = NearestNeighbor(reference_grid, current_grid)
-        reference_grid_normalized, current_grid_normalized = normalize_grids(reference_grid, current_grid)
-        
-#        plot_displacement(reference_grid,  current_grid)
-#        plt.show()
+        print(f"slope difference: {desired_slope_pattern - current_slopes}")
         voltage_correction = calculate_desired_voltages(C, desired_slope_pattern - current_slopes)
         print(f"Voltage correction: {voltage_correction}")
         current_voltages = update_voltages(dm, current_voltages, voltage_correction)
@@ -280,6 +276,7 @@ def converge_to_zernike(dm, camera, reference_grid, C, zernike_coeffs, n_modes, 
             print(f"Converged after {iteration+1} iterations.")
             break
     else:
+        reference_grid_normalized, current_grid_normalized = normalize_grids(reference_grid, current_grid)
         print("Max iterations reached without convergence.")
     return current_voltages, current_grid_normalized
     
@@ -301,25 +298,6 @@ if __name__ == "__main__":
         
         reference_grid_normalized, _, _ = normalize_reference_grid_to_unit_circle(reference_grid)
         
-            
-#        # Creating distorted grid
-#        optimized_act = np.loadtxt(f"C:\\AO-course-2024\\part_4\\last_x.dat")[0]
-##        rand_act = np.random.rand(19)*1.6 -0.8
-##        rand_act[-2:] = optimized_act[-2:]
-#        rand_act = optimized_act
-#        rand_act[:8] = -0.8
-#        dm.setActuators(rand_act)
-#        time.sleep(0.1)
-#        distorted_grid = get_current_grid(sh_camera)
-#        
-#        
-#        # Matching grid and normalizing
-#        reference_grid, distorted_grid = NearestNeighbor(reference_grid, distorted_grid)
-#        reference_grid_normalized, distorted_grid_normalized = normalize_grids(reference_grid, distorted_grid)
-#        slopes = get_slopes(reference_grid_normalized, distorted_grid_normalized)
-#        grid_size = 500
-#        
-        
         # Decide whether to load from file or generate B and C matrices
         if False:
             B_matrix = np.loadtxt("B_matrix.csv")
@@ -329,32 +307,53 @@ if __name__ == "__main__":
             B_matrix = create_B_matrix(reference_grid_normalized, n_modes_B)
             print(f"B matrix (n={n_modes_B}) has been calculated and saved")
         
-        '''Sometimes dimensions don't match, requiring recalculation every time. Maybe there's a way to prevent that?'''
-        if False:
+        '''Sometimes dimensions don't match, requiring recalculation every time. \
+        Maybe there's a way to prevent that?'''
+        if True:
             C_matrix = np.loadtxt("C_matrix.csv")
             print("C matrix loaded from file")
         else:
             C_matrix = create_C_matrix(dm, sh_camera, reference_grid)
             print("Influence matrix C has been calculated and saved")
-        
-#        # Plot wavefront of rand_act
-#        wavefront = reconstruct_wavefront(B_matrix, slopes, n_modes=20, gridsize=grid_size)
-#        plot_wavefront(wavefront, reference_grid_normalized, distorted_grid_normalized)
-#        plt.show()
             
+        
+        '''Testing wavefront reconstruction for given actuator settings'''
+        if False:
+            # Creating distorted grid
+            optimized_act = np.loadtxt(f"C:\\AO-course-2024\\part_4\\last_x.dat")[0]
+    #        rand_act = np.random.rand(19)*1.6 -0.8
+    #        rand_act[-2:] = optimized_act[-2:]
+            rand_act = optimized_act
+            rand_act[:8] = -0.8
+            dm.setActuators(rand_act)
+            time.sleep(0.1)
+            distorted_grid = get_current_grid(sh_camera)
+            
+    
+            # Matching grid and normalizing
+            reference_grid, distorted_grid = NearestNeighbor(reference_grid, distorted_grid)
+            reference_grid_normalized, distorted_grid_normalized = normalize_grids(reference_grid, distorted_grid)
+            slopes = get_slopes(reference_grid_normalized, distorted_grid_normalized)
+            grid_size = 500
+            
+            # Plot wavefront of rand_act
+            wavefront = reconstruct_wavefront(B_matrix, slopes, n_modes=20, gridsize=grid_size)
+            plot_wavefront(wavefront, reference_grid_normalized, distorted_grid_normalized)
+            plt.show()
+
+        
+        '''Control mirror to achieve wf corresponding to desired zernike coeffs'''
         n_modes = 12
         zernike_coeffs = np.zeros(n_modes)
         zernike_coeffs[1] = 0.1
         voltages, current_grid_normalized = converge_to_zernike(dm, sh_camera, reference_grid, C_matrix, zernike_coeffs, n_modes)
         
-#        print(voltages-rand_act)
-        dm.setActuators(-voltages)
+        dm.setActuators(voltages)
         time.sleep(0.1)
         
         slopes = get_current_slopes(reference_grid, sh_camera)
         print(slopes)
         
-
         grid_size = 500
         wavefront = reconstruct_wavefront(B_matrix, slopes, n_modes=20, gridsize=grid_size)
         plot_wavefront(wavefront, reference_grid_normalized, current_grid_normalized)

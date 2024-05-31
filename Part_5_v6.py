@@ -155,7 +155,7 @@ def create_B_matrix(reference_dots_normalized, n_modes):
             zernike_gradients[i-2, j+1] =  (zernike_cartesian(n, m, x, y+1e-5) - zernike_cartesian(n, m, x, y))/1e-5
             j +=2
     B = np.linalg.pinv(zernike_gradients.T)
-    np.savetxt(f"B_matrix_{n_modes}.csv", B)
+    np.savetxt(f"B_matrix.csv", B)
     return B
 
 
@@ -167,6 +167,12 @@ def normalize_grids(reference_grid, distorted_grid):
 def get_slopes(reference_grid_normalized, distorted_grid_normalized):
     displacements = (reference_grid_normalized - distorted_grid_normalized).flatten()
     return displacements
+
+def get_current_grid(camera):
+    img = camera.grab_frames(4)[-1]
+    grid = detect_blobs(img, show=False)
+    grid = filter_points_by_neighbors(grid)
+    return grid
 
 def reconstruct_wavefront(B, displacements, n_modes=10, gridsize=500):
     coefficients = B @ -displacements
@@ -185,7 +191,6 @@ def create_C_matrix(dm, camera, reference_dots, voltage_step=0.5):
     C = np.zeros((num_dots * 2, num_actuators))
 
     for i in range(num_actuators):
-        # Apply +voltage_step to the i-th actuator
         act = np.zeros(num_actuators)
         act[i] = voltage_step
         dm.setActuators(act)
@@ -195,7 +200,6 @@ def create_C_matrix(dm, camera, reference_dots, voltage_step=0.5):
         positive_dots = filter_points_by_neighbors(positive_dots)
         positive_dots, _ = NearestNeighbor(reference_dots, positive_dots)
 
-        # Apply -voltage_step to the i-th actuator
         act[i] = -voltage_step
         dm.setActuators(act)
         time.sleep(0.1)
@@ -204,57 +208,67 @@ def create_C_matrix(dm, camera, reference_dots, voltage_step=0.5):
         negative_dots = filter_points_by_neighbors(negative_dots)
         negative_dots, _ = NearestNeighbor(reference_dots, negative_dots)
 
-        # Calculate slope differences
         slope_x = (positive_dots[:, 0] - negative_dots[:, 0]) / (2 * voltage_step)
         slope_y = (positive_dots[:, 1] - negative_dots[:, 1]) / (2 * voltage_step)
         
         C[:num_dots, i] = slope_x
         C[num_dots:, i] = slope_y
-
-        # Reset the actuator to zero
-        act[i] = 0
-        dm.setActuators(act)
-        time.sleep(0.1)
-        print(f"C row {i}")
+        print(f"C col {i}")
 
     np.savetxt("C_matrix.csv", C)
     return C
 
-if __name__ == "__main__":
+if __name__ == "__main__": 
     plt.close('all')
-    pixel_size = 5.2e-6
-    focal_length=6e-3
     with OkoDM(dmtype=1) as dm:
         sh_camera = Camera(camera_index=2, exposure=1)
         normal_camera = Camera(camera_index=1, exposure=0.5)
-        reference_dots = create_reference_grid(dm=dm, camera=sh_camera)
+        
+        if True:
+            reference_grid = np.loadtxt("reference_grid.csv")
+        else:
+            reference_grid = create_reference_grid(dm=dm, camera=sh_camera)
+            
+        # Creating distorted grid
         optimized_act = np.loadtxt(f"C:\\AO-course-2024\\part_4\\last_x.dat")[0]
-        rand_act = np.random.rand(19) * 1.6 - 0.8
         rand_act = optimized_act
 #        rand_act[-2:] = optimized_act[-2:]
         rand_act[:7] = -0.8
         dm.setActuators(rand_act)
         time.sleep(0.1)
-        random_SH_img = sh_camera.grab_frames(4)[-1]
-        random_dots = detect_blobs(random_SH_img, show=False)
-        random_dots = filter_points_by_neighbors(random_dots)
-        reference_dots, distorted_dots = NearestNeighbor(reference_dots, random_dots)
-        reference_dots_normalized, distorted_dots_normalized = normalize_grids(reference_dots, distorted_dots)
-        displacements = get_slopes(reference_dots_normalized, distorted_dots_normalized)
-        n_modes_B = 20
-        B = create_B_matrix(reference_dots_normalized, n_modes_B)
-        gridsize = 500
-        wavefront = reconstruct_wavefront(B, displacements, gridsize=gridsize)
+        distorted_grid = get_current_grid(sh_camera)
+        
+        
+        # Matching grid and normalizing
+        reference_grid, distorted_grid = NearestNeighbor(reference_grid, distorted_grid)
+        reference_grid_normalized, distorted_grid_normalized = normalize_grids(reference_grid, distorted_grid)
+            
+        displacements = get_slopes(reference_grid_normalized, distorted_grid_normalized)
+        
+        if False:
+            B_matrix = np.loadtxt("B_matrix.csv")
+            print("B matrix loaded from file")
+        else:
+            n_modes_B = 100
+            B_matrix = create_B_matrix(reference_grid_normalized, n_modes_B)
+            print(f"B matrix (n={n_modes_B}) has been calculated and saved.")
+        
+
+        grid_size = 500
+        wavefront = reconstruct_wavefront(B, displacements, n_modes=20, gridsize=grid_size)
         
         plt.figure()
         plt.imshow(wavefront, cmap='viridis')
         plt.colorbar()
-        plt.scatter(reference_dots_normalized[:, 0]*250+250, reference_dots_normalized[:, 1]*250+250, s=2, c='red')
-        plt.scatter(distorted_dots_normalized[:, 0]*250+250, distorted_dots_normalized[:, 1]*250+250, s=2, c='black')
+        plt.scatter((reference_grid_normalized[:, 0]+1)*grid_size//2, (reference_grid_normalized[:, 1]+1)*grid_size//2, s=2, c='red')
+        plt.scatter((distorted_grid_normalized[:, 0]+1)*grid_size//2, (distorted_grid_normalized[:, 1]+1)*grid_size//2, s=2, c='black')
         plt.show()
     
-        
-        C_matrix = create_C_matrix(dm, sh_camera, reference_dots)
-        print("Influence matrix C has been calculated and saved.")
+        if False:
+            C_matrix = np.loadtxt("C_matrix.csv")
+            print("C matrix loaded from file")
+        else:
+            C_matrix = create_C_matrix(dm, sh_camera, reference_grid)
+            print("Influence matrix C has been calculated and saved.")
         
         

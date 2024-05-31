@@ -219,13 +219,59 @@ def create_C_matrix(dm, camera, reference_grid, voltage_step=0.5):
     np.savetxt("C_matrix.csv", C)
     return C
 
-def plot_wavefront(wavefront, reference_dots, distorted_dots):
+def plot_wavefront(wavefront, reference_grid_normalized, distorted_grid_nornalized):
     plt.figure()
     plt.imshow(wavefront, cmap='viridis')
     plt.colorbar()
     plt.scatter((reference_grid_normalized[:, 0]+1)*grid_size//2, (reference_grid_normalized[:, 1]+1)*grid_size//2, s=2, c='red')
     plt.scatter((distorted_grid_normalized[:, 0]+1)*grid_size//2, (distorted_grid_normalized[:, 1]+1)*grid_size//2, s=2, c='black')
     #plt.show()
+    
+def calculate_desired_slope_pattern(zernike_coeffs, reference_grid, n_modes):
+    lowest_mode = 2
+    desired_slope_pattern = np.zeros(len(reference_grid) * 2)
+    for l in range(lowest_mode, n_modes):
+        n, m = noll2nm(l)
+        for k in range(len(reference_grid)):
+            x = reference_grid[k, 0]
+            y = reference_grid[k, 1]
+            desired_slope_pattern[2*k] += zernike_coeffs[l-lowest_mode] * (zernike_cartesian(n, m, x+1e-5, y) - zernike_cartesian(n, m, x, y)) / 1e-5
+            desired_slope_pattern[2*k+1] += zernike_coeffs[l-lowest_mode] * (zernike_cartesian(n, m, x, y+1e-5) - zernike_cartesian(n, m, x, y)) / 1e-5
+    return desired_slope_pattern
+
+def calculate_desired_voltages(C, desired_slope_pattern):
+    return np.linalg.pinv(C) @ desired_slope_pattern
+
+def get_current_slopes(reference_grid, camera):
+    # Capture the current image and detect blobs
+    current_image = camera.grab_frames(4)[-1]
+    current_grid = detect_blobs(current_image, show=False)
+    current_grid = filter_points_by_neighbors(current_grid)
+    reference_grid, current_grid = NearestNeighbor(reference_grid, current_grid)
+    reference_grid_normalized, current_grid_normalized = normalize_grids(reference_grid, current_grid)
+    return get_slopes(reference_grid_normalized, current_grid_normalized)
+
+def update_voltages(dm, current_voltages, voltage_correction):
+    new_voltages = current_voltages + voltage_correction
+    dm.setActuators(new_voltages)
+    return new_voltages
+
+def converge_to_zernike(dm, camera, reference_grid, C, zernike_coeffs, n_modes, max_iterations=100, tolerance=1e-6):
+    desired_slope_pattern = calculate_desired_slope_pattern(zernike_coeffs, reference_grid, n_modes)
+    desired_voltages = calculate_desired_voltages(C, desired_slope_pattern)
+    current_voltages = np.zeros(19)
+    dm.setActuators(current_voltages)
+
+    for iteration in range(max_iterations):
+        current_slopes = get_current_slopes(dm, camera, reference_grid)
+        voltage_correction = calculate_desired_voltages(C, desired_slope_pattern - current_slopes)
+        current_voltages = update_voltages(dm, current_voltages, voltage_correction)
+        if np.linalg.norm(voltage_correction) < tolerance:
+            print(f"Converged after {iteration+1} iterations.")
+            break
+    else:
+        print("Max iterations reached without convergence.")
+
 
 if __name__ == "__main__": 
     plt.close('all')
@@ -266,7 +312,7 @@ if __name__ == "__main__":
 
         grid_size = 500
         wavefront = reconstruct_wavefront(B_matrix, slopes, n_modes=20, gridsize=grid_size)
-        plot_wavefront(wavefront, reference_grid, distorted_grid)
+        plot_wavefront(wavefront, reference_grid_normalized, distorted_grid_normalized)
         
     
         if True:
@@ -275,5 +321,9 @@ if __name__ == "__main__":
         else:
             C_matrix = create_C_matrix(dm, sh_camera, reference_grid)
             print("Influence matrix C has been calculated and saved")
+            
+        zernike_coeffs = np.array([0.1, -0.2, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0])
+        n_modes = 10
+        converge_to_zernike(dm, sh_camera, reference_grid, C_matrix, zernike_coeffs, n_modes)
         
         

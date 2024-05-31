@@ -102,23 +102,23 @@ def plot(img):
     plt.clf()
     plt.imshow(img, aspect='auto', interpolation='bicubic')
 
-def plot_displacement(reference_dots, random_dots):
-    plt.scatter(reference_dots[:, 0], reference_dots[:, 1], 5, c='red')
-    plt.scatter(random_dots[:, 0], random_dots[:, 1], 5, c='green')
-    for i, dot in enumerate(random_dots):
-        plt.plot([reference_dots[i, 0], random_dots[i, 0]], [reference_dots[i, 1], random_dots[i, 1]], '-', c='black')
+def plot_displacement(reference_grid, distorted_grid):
+    plt.scatter(reference_grid[:, 0], reference_grid[:, 1], 5, c='red')
+    plt.scatter(distorted_grid[:, 0], distorted_grid[:, 1], 5, c='green')
+    for i, dot in enumerate(distorted_grid):
+        plt.plot([reference_grid[i, 0], distorted_grid[i, 0]], [reference_grid[i, 1], distorted_grid[i, 1]], '-', c='black')
    
-def NearestNeighbor(reference_dots, random_dots):
-    if len(reference_dots) > len(random_dots):
-        tree = cKDTree(reference_dots)
-        _, indices = tree.query(random_dots)
+def NearestNeighbor(reference_grid, distorted_grid):
+    if len(reference_grid) > len(distorted_grid):
+        tree = cKDTree(reference_grid)
+        _, indices = tree.query(distorted_grid)
         
-        return reference_dots[indices], random_dots
+        return reference_grid[indices], distorted_grid
     else:
-        tree = cKDTree(random_dots)
-        _, indices = tree.query(reference_dots)
+        tree = cKDTree(distorted_grid)
+        _, indices = tree.query(reference_grid)
         
-        return reference_dots, random_dots[indices]
+        return reference_grid, distorted_grid[indices]
 
 def filter_points_by_neighbors(points, min_neighbours=4, neighbour_distance=65):
     tree = cKDTree(points)
@@ -128,29 +128,29 @@ def filter_points_by_neighbors(points, min_neighbours=4, neighbour_distance=65):
 
 def create_reference_grid(dm, camera):
     reference_SH_image = create_reference_image(dm, camera)
-    reference_dots = detect_blobs(reference_SH_image, show=False)
-    reference_dots = filter_points_by_neighbors(reference_dots)
-    np.savetxt("reference_grid.csv", reference_dots)
-    return reference_dots
+    reference_grid = detect_blobs(reference_SH_image, show=False)
+    reference_grid = filter_points_by_neighbors(reference_grid)
+    np.savetxt("reference_grid.csv", reference_grid)
+    return reference_grid
     
-def normalize_dots_to_unit_circle(dots, padding=0.0, center =None, scale=None,):
+def normalize_reference_grid_to_unit_circle(reference_grid, padding=0.0, center =None, scale=None,):
     if center is None:
-        center = np.mean(dots, axis=0)
-    dots_centered = dots - center
+        center = np.mean(reference_grid, axis=0)
+    reference_grid_centered = reference_grid - center
     if scale is None:
-        scale = (1-padding)/np.max(np.sqrt(np.sum(dots_centered**2, axis=1)))
-    dots_scaled = dots_centered*scale
-    return dots_scaled, center, scale
+        scale = (1-padding)/np.max(np.sqrt(np.sum(reference_grid_centered**2, axis=1)))
+    reference_grid_scaled = reference_grid_centered*scale
+    return reference_grid_scaled, center, scale
 
-def create_B_matrix(reference_dots_normalized, n_modes):
+def create_B_matrix(reference_grid_normalized, n_modes):
     lowest_mode = 2
-    zernike_gradients = np.zeros((n_modes-lowest_mode, len(reference_dots)*2))
+    zernike_gradients = np.zeros((n_modes-lowest_mode, len(reference_grid)*2))
     for i in range(lowest_mode, n_modes):
         j=0
         n,m = noll2nm(i)
-        for k in range(len(reference_dots)):
-            x = reference_dots_normalized[k, 0]
-            y = reference_dots_normalized[k, 1]
+        for k in range(len(reference_grid)):
+            x = reference_grid_normalized[k, 0]
+            y = reference_grid_normalized[k, 1]
             zernike_gradients[i-2, j] =  (zernike_cartesian(n, m, x+1e-5, y) - zernike_cartesian(n, m, x, y))/1e-5
             zernike_gradients[i-2, j+1] =  (zernike_cartesian(n, m, x, y+1e-5) - zernike_cartesian(n, m, x, y))/1e-5
             j +=2
@@ -160,8 +160,8 @@ def create_B_matrix(reference_dots_normalized, n_modes):
 
 
 def normalize_grids(reference_grid, distorted_grid):
-    reference_grid_normalized, center, scale = normalize_dots_to_unit_circle(reference_grid)
-    distorted_grid_normalized, _, _ = normalize_dots_to_unit_circle(distorted_grid, center=center, scale=scale)
+    reference_grid_normalized, center, scale = normalize_reference_grid_to_unit_circle(reference_grid)
+    distorted_grid_normalized, _, _ = normalize_reference_grid_to_unit_circle(distorted_grid, center=center, scale=scale)
     return reference_grid_normalized, distorted_grid_normalized
 
 def get_slopes(reference_grid_normalized, distorted_grid_normalized):
@@ -174,6 +174,7 @@ def get_current_grid(camera):
     grid = filter_points_by_neighbors(grid)
     return grid
 
+
 def reconstruct_wavefront(B, displacements, n_modes=10, gridsize=500):
     coefficients = B @ -displacements
     x = np.linspace(-1, 1, gridsize)
@@ -185,10 +186,10 @@ def reconstruct_wavefront(B, displacements, n_modes=10, gridsize=500):
         wavefront += coefficients[l-2]*zernike_cartesian(n, m, X, Y)
     return wavefront
 
-def create_C_matrix(dm, camera, reference_dots, voltage_step=0.5):
+def create_C_matrix(dm, camera, reference_grid, voltage_step=0.5):
     num_actuators = 19
-    num_dots = len(reference_dots)
-    C = np.zeros((num_dots * 2, num_actuators))
+    num_reference_grid = len(reference_grid)
+    C = np.zeros((num_reference_grid * 2, num_actuators))
 
     for i in range(num_actuators):
         act = np.zeros(num_actuators)
@@ -196,27 +197,35 @@ def create_C_matrix(dm, camera, reference_dots, voltage_step=0.5):
         dm.setActuators(act)
         time.sleep(0.1)
         positive_image = camera.grab_frames(4)[-1]
-        positive_dots = detect_blobs(positive_image, show=False)
-        positive_dots = filter_points_by_neighbors(positive_dots)
-        positive_dots, _ = NearestNeighbor(reference_dots, positive_dots)
+        positive_reference_grid = detect_blobs(positive_image, show=False)
+        positive_reference_grid = filter_points_by_neighbors(positive_reference_grid)
+        positive_reference_grid, _ = NearestNeighbor(reference_grid, positive_reference_grid)
 
         act[i] = -voltage_step
         dm.setActuators(act)
         time.sleep(0.1)
         negative_image = camera.grab_frames(4)[-1]
-        negative_dots = detect_blobs(negative_image, show=False)
-        negative_dots = filter_points_by_neighbors(negative_dots)
-        negative_dots, _ = NearestNeighbor(reference_dots, negative_dots)
+        negative_reference_grid = detect_blobs(negative_image, show=False)
+        negative_reference_grid = filter_points_by_neighbors(negative_reference_grid)
+        negative_reference_grid, _ = NearestNeighbor(reference_grid, negative_reference_grid)
 
-        slope_x = (positive_dots[:, 0] - negative_dots[:, 0]) / (2 * voltage_step)
-        slope_y = (positive_dots[:, 1] - negative_dots[:, 1]) / (2 * voltage_step)
+        slope_x = (positive_reference_grid[:, 0] - negative_reference_grid[:, 0]) / (2 * voltage_step)
+        slope_y = (positive_reference_grid[:, 1] - negative_reference_grid[:, 1]) / (2 * voltage_step)
         
-        C[:num_dots, i] = slope_x
-        C[num_dots:, i] = slope_y
+        C[:num_reference_grid, i] = slope_x
+        C[num_reference_grid:, i] = slope_y
         print(f"C col {i}")
 
     np.savetxt("C_matrix.csv", C)
     return C
+
+def plot_wavefront(wavefront, reference_dots, distorted_dots):
+    plt.figure()
+    plt.imshow(wavefront, cmap='viridis')
+    plt.colorbar()
+    plt.scatter((reference_grid_normalized[:, 0]+1)*grid_size//2, (reference_grid_normalized[:, 1]+1)*grid_size//2, s=2, c='red')
+    plt.scatter((distorted_grid_normalized[:, 0]+1)*grid_size//2, (distorted_grid_normalized[:, 1]+1)*grid_size//2, s=2, c='black')
+    #plt.show()
 
 if __name__ == "__main__": 
     plt.close('all')
@@ -226,8 +235,10 @@ if __name__ == "__main__":
         
         if True:
             reference_grid = np.loadtxt("reference_grid.csv")
+            print("Reference grid loaded from file")
         else:
             reference_grid = create_reference_grid(dm=dm, camera=sh_camera)
+            print("Reference grid measured")
             
         # Creating distorted grid
         optimized_act = np.loadtxt(f"C:\\AO-course-2024\\part_4\\last_x.dat")[0]
@@ -242,8 +253,7 @@ if __name__ == "__main__":
         # Matching grid and normalizing
         reference_grid, distorted_grid = NearestNeighbor(reference_grid, distorted_grid)
         reference_grid_normalized, distorted_grid_normalized = normalize_grids(reference_grid, distorted_grid)
-            
-        displacements = get_slopes(reference_grid_normalized, distorted_grid_normalized)
+        slopes = get_slopes(reference_grid_normalized, distorted_grid_normalized)
         
         if False:
             B_matrix = np.loadtxt("B_matrix.csv")
@@ -251,24 +261,19 @@ if __name__ == "__main__":
         else:
             n_modes_B = 100
             B_matrix = create_B_matrix(reference_grid_normalized, n_modes_B)
-            print(f"B matrix (n={n_modes_B}) has been calculated and saved.")
+            print(f"B matrix (n={n_modes_B}) has been calculated and saved")
         
 
         grid_size = 500
-        wavefront = reconstruct_wavefront(B, displacements, n_modes=20, gridsize=grid_size)
+        wavefront = reconstruct_wavefront(B_matrix, slopes, n_modes=20, gridsize=grid_size)
+        plot_wavefront(wavefront, reference_grid, distorted_grid)
         
-        plt.figure()
-        plt.imshow(wavefront, cmap='viridis')
-        plt.colorbar()
-        plt.scatter((reference_grid_normalized[:, 0]+1)*grid_size//2, (reference_grid_normalized[:, 1]+1)*grid_size//2, s=2, c='red')
-        plt.scatter((distorted_grid_normalized[:, 0]+1)*grid_size//2, (distorted_grid_normalized[:, 1]+1)*grid_size//2, s=2, c='black')
-        plt.show()
     
-        if False:
+        if True:
             C_matrix = np.loadtxt("C_matrix.csv")
             print("C matrix loaded from file")
         else:
             C_matrix = create_C_matrix(dm, sh_camera, reference_grid)
-            print("Influence matrix C has been calculated and saved.")
+            print("Influence matrix C has been calculated and saved")
         
         

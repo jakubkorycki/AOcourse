@@ -188,8 +188,8 @@ def reconstruct_wavefront(B, displacements, n_modes=10, gridsize=500):
 
 def create_C_matrix(dm, camera, reference_grid, voltage_step=0.5):
     num_actuators = 19
-    num_reference_grid = len(reference_grid)
-    C = np.zeros((num_reference_grid * 2, num_actuators))
+    len_grid = len(reference_grid)
+    C = np.zeros((len_grid * 2, num_actuators))
 
     for i in range(num_actuators):
         act = np.zeros(num_actuators)
@@ -197,23 +197,25 @@ def create_C_matrix(dm, camera, reference_grid, voltage_step=0.5):
         dm.setActuators(act)
         time.sleep(0.1)
         positive_image = camera.grab_frames(4)[-1]
-        positive_reference_grid = detect_blobs(positive_image, show=False)
-        positive_reference_grid = filter_points_by_neighbors(positive_reference_grid)
-        positive_reference_grid, _ = NearestNeighbor(reference_grid, positive_reference_grid)
+        positive_grid = detect_blobs(positive_image, show=False)
+        positive_grid = filter_points_by_neighbors(positive_grid)
+        reference_grid, positive_grid = NearestNeighbor(reference_grid, positive_grid)
 
         act[i] = -voltage_step
         dm.setActuators(act)
         time.sleep(0.1)
         negative_image = camera.grab_frames(4)[-1]
-        negative_reference_grid = detect_blobs(negative_image, show=False)
-        negative_reference_grid = filter_points_by_neighbors(negative_reference_grid)
-        negative_reference_grid, _ = NearestNeighbor(reference_grid, negative_reference_grid)
+        negative_grid = detect_blobs(negative_image, show=False)
+        negative_grid = filter_points_by_neighbors(negative_grid)
+        _, negative_grid = NearestNeighbor(reference_grid, negative_grid)
 
-        slope_x = (positive_reference_grid[:, 0] - negative_reference_grid[:, 0]) / (2 * voltage_step)
-        slope_y = (positive_reference_grid[:, 1] - negative_reference_grid[:, 1]) / (2 * voltage_step)
+        _, positive_grid = normalize_grids(reference_grid, positive_grid)
+        _, negative_grid = normalize_grids(reference_grid, negative_grid)
+        slope_x = (positive_grid[:, 0] - negative_grid[:, 0]) / (2 * voltage_step)
+        slope_y = (positive_grid[:, 1] - negative_grid[:, 1]) / (2 * voltage_step)
         
-        C[:num_reference_grid, i] = slope_x
-        C[num_reference_grid:, i] = slope_y
+        C[:len_grid, i] = slope_x
+        C[len_grid:, i] = slope_y
         print(f"C col {i}")
 
     np.savetxt("C_matrix.csv", C)
@@ -258,8 +260,8 @@ def update_voltages(dm, current_voltages, voltage_correction):
 
 def converge_to_zernike(dm, camera, reference_grid, C, zernike_coeffs, n_modes, max_iterations=100, tolerance=1e-6):
     desired_slope_pattern = calculate_desired_slope_pattern(zernike_coeffs, reference_grid, n_modes)
-    print(desired_slope_pattern) # Checked for tip tile modes and it seems correct
-#    desired_voltages = calculate_desired_voltages(C, desired_slope_pattern)
+    print(desired_slope_pattern) # Checked for tip, tilt modes and it seems correct
+    # desired_voltages = calculate_desired_voltages(C, desired_slope_pattern)
     current_voltages = np.zeros(19)
     dm.setActuators(current_voltages)
     time.sleep(0.1)
@@ -319,10 +321,10 @@ if __name__ == "__main__":
         
         '''Testing wavefront reconstruction for given actuator settings'''
         if False:
-            # Creating distorted grid
+            # Creating distorted grid, e.g. for defocus-like (first 8 actuators)
             optimized_act = np.loadtxt(f"C:\\AO-course-2024\\part_4\\last_x.dat")[0]
-    #        rand_act = np.random.rand(19)*1.6 -0.8
-    #        rand_act[-2:] = optimized_act[-2:]
+            # rand_act = np.random.rand(19)*1.6 -0.8
+            # rand_act[-2:] = optimized_act[-2:]
             rand_act = optimized_act
             rand_act[:8] = -0.8
             dm.setActuators(rand_act)
@@ -357,11 +359,4 @@ if __name__ == "__main__":
         grid_size = 500
         wavefront = reconstruct_wavefront(B_matrix, slopes, n_modes=20, gridsize=grid_size)
         plot_wavefront(wavefront, reference_grid_normalized, current_grid_normalized)
-        
-    
-
-            
-#        zernike_coeffs = np.array([0.0, -0.2, 0.05, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0])
-        
-        
         

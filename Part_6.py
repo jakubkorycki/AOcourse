@@ -309,7 +309,7 @@ if __name__ == "__main__":
             B_matrix = create_B_matrix(reference_grid_normalized, n_modes_B)
             print(f"B matrix (n={n_modes_B}) has been calculated and saved")
         
-        '''Sometimes dimensions don't match, requiring recalculation every time. \
+        '''Sometimes dimensions don't match due to dropout, requiring recalculation every time. \
         Maybe there's a way to prevent that?'''
         if True:
             C_matrix = np.loadtxt("C_matrix.csv")

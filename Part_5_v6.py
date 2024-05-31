@@ -214,7 +214,8 @@ def create_C_matrix(dm, camera, reference_dots, voltage_step=0.5):
         # Reset the actuator to zero
         act[i] = 0
         dm.setActuators(act)
-        time.sleep(0.2)
+        time.sleep(0.1)
+        print(f"C row {i}")
 
     np.savetxt("C_matrix.csv", C)
     return C
@@ -245,9 +246,6 @@ if __name__ == "__main__":
         gridsize = 500
         wavefront = reconstruct_wavefront(B, displacements, gridsize=gridsize)
         
-        C_matrix = create_C_matrix(dm, sh_camera, reference_dots)
-        print("Influence matrix C has been calculated and saved.")
-        
         plt.figure()
         plt.imshow(wavefront, cmap='viridis')
         plt.colorbar()
@@ -255,3 +253,8 @@ if __name__ == "__main__":
         plt.scatter(distorted_dots_normalized[:, 0]*250+250, distorted_dots_normalized[:, 1]*250+250, s=2, c='black')
         plt.show()
     
+        
+        C_matrix = create_C_matrix(dm, sh_camera, reference_dots)
+        print("Influence matrix C has been calculated and saved.")
+        
+        

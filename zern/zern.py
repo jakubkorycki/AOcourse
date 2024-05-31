@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 def nm2noll(n, m):
         """Convert indices `(n, m)` to the Noll's index `k`.
 
-        Note that Noll's index `k` starts from one and Python indexing is
+        Noll's index `k` starts from one and Python indexing is
         zero-based.
 
         """
@@ -184,6 +184,7 @@ if __name__ == "__main__":
     X, Y = np.meshgrid(x, y)
     
     n, m = 3, 3
-    Z_cartesian = zernike_cartesian(n, m, X, Y)
-    plt.imshow(Z_cartesian)
-    dZ_dx_cartesian, dZ_dy_cartesian = gradient_zernike_cartesian(n, m, X, Y)
+    print(cartesian_to_polar(1, 1))
+#    Z_cartesian = zernike_cartesian(n, m, X, Y)
+#    plt.imshow(Z_cartesian)
+#    dZ_dx_cartesian, dZ_dy_cartesian = gradient_zernike_cartesian(n, m, X, Y)

@@ -133,7 +133,7 @@ def create_reference_grid(dm, camera):
     np.savetxt("reference_grid.csv", reference_dots)
     return reference_dots
     
-def normalize_dots_to_unit_circle(dots, padding=0.1, center =None, scale=None,):
+def normalize_dots_to_unit_circle(dots, padding=0.0, center =None, scale=None,):
     if center is None:
         center = np.mean(dots, axis=0)
     dots_centered = dots - center
@@ -167,8 +167,17 @@ def normalize_grids(reference_grid, distorted_grid):
 def get_slopes(reference_grid_normalized, distorted_grid_normalized):
     displacements = (reference_grid_normalized - distorted_grid_normalized).flatten()
     return displacements
-#def wavefront_reconstruction(B):
-    
+
+def reconstruct_wavefront(B, displacements, n_modes=10, gridsize=500):
+    coefficients = B @ -displacements
+    x = np.linspace(-1, 1, gridsize)
+    y = np.linspace(-1, 1, gridsize)
+    X, Y = np.meshgrid(x, y)
+    wavefront = np.zeros((gridsize, gridsize))
+    for l in range(2, n_modes):
+        n,m = noll2nm(l)
+        wavefront += coefficients[l-2]*zernike_cartesian(n, m, X, Y)
+    return wavefront
 
 if __name__ == "__main__":
     plt.close('all')
@@ -178,7 +187,12 @@ if __name__ == "__main__":
         sh_camera = Camera(camera_index=2, exposure=1)
         normal_camera = Camera(camera_index=1, exposure=0.5)
         reference_dots = create_reference_grid(dm=dm, camera=sh_camera)
-        dm.setActuators(np.random.rand(19) * 1.6 - 0.8)
+        optimized_act = np.loadtxt(f"C:\\AO-course-2024\\part_4\\last_x.dat")[0]
+        rand_act = np.random.rand(19) * 1.6 - 0.8
+        rand_act = optimized_act
+#        rand_act[-2:] = optimized_act[-2:]
+        rand_act[:7] = -0.8
+        dm.setActuators(rand_act)
         time.sleep(0.2)
         random_SH_img = sh_camera.grab_frames(4)[-1]
         random_dots = detect_blobs(random_SH_img, show=False)
@@ -186,101 +200,14 @@ if __name__ == "__main__":
         reference_dots, distorted_dots = NearestNeighbor(reference_dots, random_dots)
         reference_dots_normalized, distorted_dots_normalized = normalize_grids(reference_dots, distorted_dots)
         displacements = get_slopes(reference_dots_normalized, distorted_dots_normalized)
-        
-#%%
-#
-#    plt.clf()
-#    reference_dots, random_dots = NearestNeighbor(reference_dots, random_dots)
-#    reference_dots_normalized, center, scale = normalize_dots_to_unit_circle(reference_dots)
-#    random_dots_normalized, _, _ = normalize_dots_to_unit_circle(random_dots, center=center, scale=scale)
-#    print(len(reference_dots), len(random_dots))
-#    plot_displacement(reference_dots, random_dots)
+        n_modes_B = 20
+        B = create_B_matrix(reference_dots_normalized, n_modes_B)
+        gridsize = 500
+        wavefront = reconstruct_wavefront(B, displacements, gridsize=gridsize)
+        plt.figure()
+        plt.imshow(wavefront, cmap='viridis')
+        plt.colorbar()
+        plt.scatter(reference_dots_normalized[:, 0]*250+250, reference_dots_normalized[:, 1]*250+250, s=2, c='red')
+        plt.scatter(distorted_dots_normalized[:, 0]*250+250, distorted_dots_normalized[:, 1]*250+250, s=2, c='black')
+        plt.show()
     
-    #%%
-    
-    
-#    displacements = (reference_dots_normalized - random_dots_normalized).flatten()
-#    displacements = get_slopes(reference_dots, random_dots)
-    
-    ''' Normalization to unit circle happens in cell above!'''
-#    reference_dots_normalized = (reference_dots - np.mean(reference_dots, axis=0)) / np.ptp(reference_dots, axis=0)
-#    displacements_normalized = displacements / np.ptp(reference_dots, axis=0)
-#    displacements_normalized = displacements_normalized.flatten()
-#    reference_dots_normalized = reference_dots
-
-    
-    n_modes_B = 10
-    B = create_B_matrix(reference_dots_normalized, n_modes_B)
-    
-    coefficient = B @ displacements
-    
-    
-    x = np.linspace(-1, 1, 500)
-    y = np.linspace(-1, 1, 500)
-    X, Y = np.meshgrid(x, y)
-    phi = np.zeros((500, 500))
-    
-    for l in range(2, 9):
-        n,m = noll2nm(l)
-        phi += coefficient[l-2]*zernike_cartesian(n, m, X, Y)
-    
-    plt.figure()
-    plt.imshow(phi, cmap='viridis')
-    plt.colorbar()
-    plt.scatter(reference_dots_normalized[:, 0]*250+250, reference_dots_normalized[:, 1]*250+250, s=2, c='red')
-    plt.scatter(distorted_dots_normalized[:, 0]*250+250, distorted_dots_normalized[:, 1]*250+250, s=2, c='black')
-
-    plt.show()
-    
-    
-    
-                             
-            
-            
-    
-    
-    
-    
-    
-#%%
-#
-#    displacements_normalized = (displacements  - np.min(displacements, axis=0)) / np.ptp(displacements, axis=0)
-##    reference_dots_normalized = (reference_dots - np.mean(reference_dots, axis=0)) / np.ptp(reference_dots, axis=0)
-##    displacements_normalized = displacements / np.ptp(displacements, axis=0)
-#
-#
-#    
-#    L, K = 200, 250
-#    ddx = np.linspace(-1.0, 1.0, K)
-#    ddy = np.linspace(-1.0, 1.0, L)
-#    xv, yv = np.meshgrid(ddx, ddy)
-#    zern.make_cart_grid(xv, yv)
-#    
-#    points = reference_dots_normalized
-#    grid_points = np.c_[xv.flatten(), yv.flatten()]
-#    displacement_x_grid = griddata(points, displacements_normalized[:, 0], grid_points, method='cubic').reshape(xv.shape)
-#    displacement_y_grid = griddata(points, displacements_normalized[:, 1], grid_points, method='cubic').reshape(xv.shape)
-#
-#    coeffs_x = zern.fit_cart_grid(displacement_x_grid.flatten())[0]
-#    coeffs_y = zern.fit_cart_grid(displacement_y_grid.flatten())[0]
-#    
-#    reconstructed_wavefront_x = zern.eval_grid(coeffs_x, matrix=True)
-#    reconstructed_wavefront_y = zern.eval_grid(coeffs_y, matrix=True)
-#
-#    reconstructed_wavefront = reconstructed_wavefront_x + reconstructed_wavefront_y
-#
-#    plt.figure(figsize=(12,6))
-#    plt.subplot(1, 2, 1)
-#    plt.imshow(reconstructed_wavefront, origin='lower', extent=(-1, 1, -1, 1))
-#    plt.colorbar()
-#    plt.title('Reconstructed Wavefront')
-#
-#    plt.subplot(1, 2, 2)
-#    plt.plot(range(1, zern.nk + 1), coeffs_x, marker='.', label='X Coeffs')
-#    plt.plot(range(1, zern.nk + 1), coeffs_y, marker='.', label='Y Coeffs')
-#    plt.legend()
-#    plt.title('Zernike Coefficients')
-#
-#    plt.show()
-
-#%%

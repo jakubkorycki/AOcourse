@@ -152,7 +152,8 @@ if __name__ == "__main__":
             optimized_act = np.loadtxt(f"C:\\AO-course-2024\\part_4\\last_x.dat")[0]
 #            optimized_act[0]=1
             dm.setActuators(optimized_act)
-            dm.setActuators(np.random.rand(19) * 1.6 - 0.8)
+            randact = np.random.rand(19) * 1.6 - 0.8
+            dm.setActuators(randact)
             time.sleep(0.2)
             random_img = normal_camera.grab_frames(4)[-1]
             random_SH_img = sh_camera.grab_frames(4)[-1]
@@ -184,7 +185,7 @@ if __name__ == "__main__":
     reference_dots_normalized = reference_dots
     displacements_normalized = displacements.flatten()
     
-    a, b = 2, 10
+    a, b = 2, 40
     zernike_gradients = np.zeros((b-a, len(reference_dots)*2))
     
     for i in range(a, b):
@@ -199,7 +200,7 @@ if __name__ == "__main__":
             j +=2
         
     B = np.linalg.pinv(zernike_gradients.T)
-    coefficient = B @ displacements_normalized
+    coefficient = B @ -displacements_normalized
     
     
     x = np.linspace(-1, 1, 500)

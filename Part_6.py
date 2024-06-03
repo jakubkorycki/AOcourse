@@ -142,6 +142,11 @@ def normalize_reference_grid_to_unit_circle(reference_grid, padding=0.0, center 
     reference_grid_scaled = reference_grid_centered*scale
     return reference_grid_scaled, center, scale
 
+def crop_grid_to_square(grid, square_size):
+    cx, cy = np.mean(grid[:, 0], axis=0), np.mean(grid[:, 1], axis=0)
+    dx, dy = np.max(grid[:, 0]) - cx, np.max(grid[:, 1]) - cy
+    return grid[(grid[:, 0] > cx - dx/2 - square_size) & (grid[:, 0] < cx - dx/2 + square_size) & (grid[:, 1] > cy - dy/2 - square_size) & (grid[:, 1] < cy - dy/2 + square_size)]
+
 def create_B_matrix(reference_grid_normalized, n_modes):
     lowest_mode = 2
     zernike_gradients = np.zeros((n_modes-lowest_mode, len(reference_grid)*2))

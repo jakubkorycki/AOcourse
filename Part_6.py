@@ -192,31 +192,32 @@ def create_C_matrix(dm, camera, reference_grid, voltage_step=0.5):
     C = np.zeros((len_grid * 2, num_actuators))
 
     for i in range(num_actuators):
-        act = np.zeros(num_actuators)
-        act[i] = voltage_step
-        dm.setActuators(act)
-        time.sleep(0.1)
-        positive_image = camera.grab_frames(4)[-1]
-        positive_grid = detect_blobs(positive_image, show=False)
-        positive_grid = filter_points_by_neighbors(positive_grid)
-        reference_grid, positive_grid = NearestNeighbor(reference_grid, positive_grid)
-
-        act[i] = -voltage_step
-        dm.setActuators(act)
-        time.sleep(0.1)
-        negative_image = camera.grab_frames(4)[-1]
-        negative_grid = detect_blobs(negative_image, show=False)
-        negative_grid = filter_points_by_neighbors(negative_grid)
-        _, negative_grid = NearestNeighbor(reference_grid, negative_grid)
-
-        _, positive_grid = normalize_grids(reference_grid, positive_grid)
-        _, negative_grid = normalize_grids(reference_grid, negative_grid)
-        slope_x = (positive_grid[:, 0] - negative_grid[:, 0]) / (2 * voltage_step)
-        slope_y = (positive_grid[:, 1] - negative_grid[:, 1]) / (2 * voltage_step)
-        
-        C[:len_grid, i] = slope_x
-        C[len_grid:, i] = slope_y
-        print(f"C col {i}")
+        if i < 17:
+            act = np.zeros(num_actuators)
+            act[i] = voltage_step
+            dm.setActuators(act)
+            time.sleep(0.1)
+            positive_image = camera.grab_frames(4)[-1]
+            positive_grid = detect_blobs(positive_image, show=False)
+            positive_grid = filter_points_by_neighbors(positive_grid)
+            reference_grid, positive_grid = NearestNeighbor(reference_grid, positive_grid)
+    
+            act[i] = -voltage_step
+            dm.setActuators(act)
+            time.sleep(0.1)
+            negative_image = camera.grab_frames(4)[-1]
+            negative_grid = detect_blobs(negative_image, show=False)
+            negative_grid = filter_points_by_neighbors(negative_grid)
+            positive_grid, negative_grid = NearestNeighbor(positive_grid, negative_grid)
+    
+            _, positive_grid = normalize_grids(reference_grid, positive_grid)
+            _, negative_grid = normalize_grids(reference_grid, negative_grid)
+            slope_x = (positive_grid[:, 0] - negative_grid[:, 0]) / (2 * voltage_step)
+            slope_y = (positive_grid[:, 1] - negative_grid[:, 1]) / (2 * voltage_step)
+            
+            C[:len_grid, i] = slope_x
+            C[len_grid:, i] = slope_y
+        print(f"C col {i}, {len(positive_grid)} pos, {len(negative_grid)} neg, {len_grid} ref")
 
     np.savetxt("C_matrix.csv", C)
     return C
@@ -242,8 +243,7 @@ def calculate_desired_slope_pattern(zernike_coeffs, reference_grid, n_modes):
     return desired_slope_pattern
 
 def calculate_desired_voltages(C, desired_slope_pattern):
-    # The truncation below might be a mistake/bandaid fix
-    return np.linalg.pinv(C[:len(desired_slope_pattern)]) @ desired_slope_pattern
+    return np.linalg.pinv(C) @ desired_slope_pattern
 
 def get_current_slopes(reference_grid, camera):
     current_image = camera.grab_frames(4)[-1]
@@ -255,14 +255,17 @@ def get_current_slopes(reference_grid, camera):
 
 def update_voltages(dm, current_voltages, voltage_correction):
     new_voltages = current_voltages + voltage_correction
+    new_voltages = np.clip(new_voltages, -1.0, 1.0)
     dm.setActuators(new_voltages)
     return new_voltages
 
-def converge_to_zernike(dm, camera, reference_grid, C, zernike_coeffs, n_modes, max_iterations=100, tolerance=1e-6):
+def converge_to_zernike(dm, camera, reference_grid, C, zernike_coeffs, n_modes, max_iterations=100, tolerance=1e-6, ref_volt=None):
     desired_slope_pattern = calculate_desired_slope_pattern(zernike_coeffs, reference_grid, n_modes)
     print(desired_slope_pattern) # Checked for tip, tilt modes and it seems correct
     # desired_voltages = calculate_desired_voltages(C, desired_slope_pattern)
     current_voltages = np.zeros(19)
+    if ref_volt is not None:
+        current_voltages[-2:] = ref_volt[-2:]
     dm.setActuators(current_voltages)
     time.sleep(0.1)
 
@@ -270,8 +273,13 @@ def converge_to_zernike(dm, camera, reference_grid, C, zernike_coeffs, n_modes, 
         current_slopes = get_current_slopes(reference_grid, camera)
         current_grid = get_current_grid(camera)
         reference_grid, current_grid = NearestNeighbor(reference_grid, current_grid)
-        print(f"slope difference: {desired_slope_pattern - current_slopes}")
-        voltage_correction = calculate_desired_voltages(C, desired_slope_pattern - current_slopes)
+        try:
+            print(f"slope difference: {desired_slope_pattern - current_slopes}")
+            voltage_correction = 0.1*np.clip(calculate_desired_voltages(C, desired_slope_pattern - current_slopes), -1.0, 1.0)
+            previous_slopes = current_slopes
+        except:
+            print(f"slope difference: {desired_slope_pattern - previous_slopes}")
+            voltage_correction = 0.1*np.clip(calculate_desired_voltages(C, desired_slope_pattern - previous_slopes), -1.0, 1.0)
         print(f"Voltage correction: {voltage_correction}")
         current_voltages = update_voltages(dm, current_voltages, voltage_correction)
         if np.linalg.norm(voltage_correction) < tolerance:
@@ -288,7 +296,7 @@ def converge_to_zernike(dm, camera, reference_grid, C, zernike_coeffs, n_modes, 
 if __name__ == "__main__": 
     plt.close('all')
     with OkoDM(dmtype=1) as dm:
-        sh_camera = Camera(camera_index=2, exposure=1)
+        sh_camera = Camera(camera_index=2, exposure=1.1)
         normal_camera = Camera(camera_index=1, exposure=0.5)
         
         if False:
@@ -311,7 +319,7 @@ if __name__ == "__main__":
         
         '''Sometimes dimensions don't match due to dropout, requiring recalculation every time. \
         Maybe there's a way to prevent that?'''
-        if True:
+        if False:
             C_matrix = np.loadtxt("C_matrix.csv")
             print("C matrix loaded from file")
         else:
@@ -320,7 +328,7 @@ if __name__ == "__main__":
             
         
         '''Testing wavefront reconstruction for given actuator settings'''
-        if False:
+        if True:
             # Creating distorted grid, e.g. for defocus-like (first 8 actuators)
             optimized_act = np.loadtxt(f"C:\\AO-course-2024\\part_4\\last_x.dat")[0]
             # rand_act = np.random.rand(19)*1.6 -0.8
@@ -348,7 +356,7 @@ if __name__ == "__main__":
         n_modes = 12
         zernike_coeffs = np.zeros(n_modes)
         zernike_coeffs[1] = 0.1
-        voltages, current_grid_normalized = converge_to_zernike(dm, sh_camera, reference_grid, C_matrix, zernike_coeffs, n_modes)
+        voltages, current_grid_normalized = converge_to_zernike(dm, sh_camera, reference_grid, C_matrix, zernike_coeffs, n_modes, ref_volt = optimized_act)
         
         dm.setActuators(voltages)
         time.sleep(0.1)

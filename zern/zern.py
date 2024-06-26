@@ -13,31 +13,27 @@ def nm2noll(n, m):
             k += 1
         return k
 
-def noll2nm(j):
-    """
-    Convert Noll index to (n, m) indices for Zernike polynomials.
-   
-    Parameters:
-    j (int): Noll index (1-based).
-   
-    Returns:
-    tuple: (n, m) where n is the radial order and m is the azimuthal order.
-    """
-    if j < 1:
-        raise ValueError("Noll index must be a positive integer.")
+def noll2nm(i):
+    '''Get the Zernike index from a Noll index.
 
-    n = 0
-    while (n * (n + 1)) // 2 < j:
-        n += 1
+    Parameters
+    ----------
+    i : int
+        The Noll index.
 
-    n -= 1
-    k = j - (n * (n + 1)) // 2 - 1
-    m = -n + 2 * (k // 2)
-
-    if k % 2 == 1:
-        m = -m
-
-    return n, m
+    Returns
+    -------
+    n : int
+        The radial Zernike order.
+    m : int
+        The azimuthal Zernike order.
+    '''
+    n = int(np.sqrt(2 * i - 1) + 0.5) - 1
+    if n % 2:
+        m = 2 * int((2 * (i + 1) - n * (n + 1)) // 4) - 1
+    else:
+        m = 2 * int((2 * i + 1 - n * (n + 1)) // 4)
+    return n, m * (-1)**(i % 2)
 
 def cartesian_to_polar(x, y):
     """
@@ -108,6 +104,7 @@ def zernike_polynomial(n, m, rho, phi):
     numpy.ndarray: Zernike polynomial evaluated at (rho, phi).
     """
     Rnm = radial_zernike(n, abs(m), rho)
+
     
     if m >= 0:
         return Rnm * np.cos(m * phi)
@@ -183,8 +180,11 @@ if __name__ == "__main__":
     y = np.linspace(-1, 1, 100)
     X, Y = np.meshgrid(x, y)
     
-    n, m = 3, 3
-    print(cartesian_to_polar(1, 1))
-#    Z_cartesian = zernike_cartesian(n, m, X, Y)
-#    plt.imshow(Z_cartesian)
-#    dZ_dx_cartesian, dZ_dy_cartesian = gradient_zernike_cartesian(n, m, X, Y)
+    for i in range(10):
+        n, m = noll2nm(i+1)
+        
+#    print(cartesian_to_polar(1, 1))
+        Z_cartesian = zernike_cartesian(n, m, X, Y)
+        plt.figure()
+        plt.imshow(Z_cartesian)
+#        dZ_dx_cartesian, dZ_dy_cartesian = gradient_zernike_cartesian(n, m, X, Y)

@@ -12,12 +12,11 @@ import time
 import os
 
 from pathlib import Path
-os.chdir(Path(__file__).parent)
-from zernike import RZern
-from zern.zern import *
+#os.chdir(Path(__file__).parent)
+#from zern.zern import *
 
 # Set the path for DLL loading
-os.environ['PATH'] = "C:\\AO-course-2024\\dm\\okotech\\okodm_sdk\\python" + os.pathsep + os.environ['PATH']
+#os.environ['PATH'] = "C:\\AO-course-2024\\dm\\okotech\\okodm_sdk\\python" + os.pathsep + os.environ['PATH']
 
 class Camera:
     def __init__(self, camera_index, exposure):
@@ -147,12 +146,11 @@ if __name__ == "__main__":
             reference_img = reference_image(dm, normal_camera)
             reference_SH_img = reference_image(dm, sh_camera)
             reference_dots = detect_blobs(reference_SH_img, show=False)
-#            test = np.zeros(19)
-#            test[5] = 1
             optimized_act = np.loadtxt(f"C:\\AO-course-2024\\part_4\\last_x.dat")[0]
-#            optimized_act[0]=1
-            dm.setActuators(optimized_act)
-            randact = np.random.rand(19) * 1.6 - 0.8
+#            dm.setActuators(optimized_act)
+#            randact = np.random.rand(19) *1.6-0.8
+            optimized_act[1:5] = 1
+            optimized_act[5:17] = -1
             dm.setActuators(randact)
             time.sleep(0.2)
             random_img = normal_camera.grab_frames(4)[-1]
@@ -169,106 +167,54 @@ if __name__ == "__main__":
 
     plt.clf()
     reference_dots, random_dots = NearestNeighbor(reference_dots, random_dots)
-    reference_dots, center, scale = normalize_dots_to_unit_circle(reference_dots)
-    random_dots, _, _ = normalize_dots_to_unit_circle(random_dots, center=center, scale=scale)
+    reference_dots_normalized, center, scale = normalize_dots_to_unit_circle(reference_dots)
+    random_dots_normalized, _, _ = normalize_dots_to_unit_circle(random_dots, center=center, scale=scale)
     print(len(reference_dots), len(random_dots))
-    plot_displacement(reference_dots, random_dots)
+    plot_displacement(reference_dots_normalized, random_dots_normalized)
     
-    #%%
+#%%
     
-    
-    displacements = reference_dots - random_dots
+    displacements_normalized = reference_dots_normalized - random_dots_normalized
     ''' Normalization to unit circle happens in cell above!'''
 #    reference_dots_normalized = (reference_dots - np.mean(reference_dots, axis=0)) / np.ptp(reference_dots, axis=0)
 #    displacements_normalized = displacements / np.ptp(reference_dots, axis=0)
 #    displacements_normalized = displacements_normalized.flatten()
-    reference_dots_normalized = reference_dots
-    displacements_normalized = displacements.flatten()
+#    reference_dots_normalized = reference_dots
+    displacements_normalized = displacements_normalized.flatten()
     
-    a, b = 2, 40
-    zernike_gradients = np.zeros((b-a, len(reference_dots)*2))
+    a, b = 2, 15
+    zernike_gradients = np.zeros((b-a, len(reference_dots_normalized)*2))
+    print(zernike_gradients.shape)
     
     for i in range(a, b):
         j=0
         n,m = noll2nm(i)
         
-        for k in range(len(reference_dots)):
+        for k in range(len(reference_dots_normalized)):
             x = reference_dots_normalized[k, 0]
             y = reference_dots_normalized[k, 1]
             zernike_gradients[i-2, j] =  (zernike_cartesian(n, m, x+1e-5, y) - zernike_cartesian(n, m, x, y))/1e-5
             zernike_gradients[i-2, j+1] =  (zernike_cartesian(n, m, x, y+1e-5) - zernike_cartesian(n, m, x, y))/1e-5
             j +=2
         
-    B = np.linalg.pinv(zernike_gradients.T)
-    coefficient = B @ -displacements_normalized
+    B_inv = np.linalg.pinv(zernike_gradients.T)
+    coefficient =  B_inv @ -displacements_normalized 
     
-    
-    x = np.linspace(-1, 1, 500)
-    y = np.linspace(-1, 1, 500)
+    N = 500
+    x = np.linspace(-1, 1, N)
+    y = np.linspace(-1, 1, N)
     X, Y = np.meshgrid(x, y)
-    phi = np.zeros((500, 500))
+    phi = np.zeros((N, N))
     
     for l in range(a,b):
         n,m = noll2nm(l)
         phi += coefficient[l-2]*zernike_cartesian(n, m, X, Y)
+        
     
     plt.figure()
-    plt.imshow(phi, cmap='viridis')
+    plt.imshow(phi, cmap='viridis', origin='lower')
     plt.colorbar()
     plt.scatter(reference_dots_normalized[:, 0]*250+250, reference_dots_normalized[:, 1]*250+250, s=2, c='red')
-    plt.scatter(random_dots[:, 0]*250+250, random_dots[:, 1]*250+250, s=2, c='black')
+    plt.scatter(random_dots_normalized[:, 0]*250+250, random_dots_normalized[:, 1]*250+250, s=2, c='cyan')
 
     plt.show()
-    
-    
-    
-                             
-            
-            
-    
-    
-    
-    
-    
-#%%
-#
-#    displacements_normalized = (displacements  - np.min(displacements, axis=0)) / np.ptp(displacements, axis=0)
-##    reference_dots_normalized = (reference_dots - np.mean(reference_dots, axis=0)) / np.ptp(reference_dots, axis=0)
-##    displacements_normalized = displacements / np.ptp(displacements, axis=0)
-#
-#
-#    
-#    L, K = 200, 250
-#    ddx = np.linspace(-1.0, 1.0, K)
-#    ddy = np.linspace(-1.0, 1.0, L)
-#    xv, yv = np.meshgrid(ddx, ddy)
-#    zern.make_cart_grid(xv, yv)
-#    
-#    points = reference_dots_normalized
-#    grid_points = np.c_[xv.flatten(), yv.flatten()]
-#    displacement_x_grid = griddata(points, displacements_normalized[:, 0], grid_points, method='cubic').reshape(xv.shape)
-#    displacement_y_grid = griddata(points, displacements_normalized[:, 1], grid_points, method='cubic').reshape(xv.shape)
-#
-#    coeffs_x = zern.fit_cart_grid(displacement_x_grid.flatten())[0]
-#    coeffs_y = zern.fit_cart_grid(displacement_y_grid.flatten())[0]
-#    
-#    reconstructed_wavefront_x = zern.eval_grid(coeffs_x, matrix=True)
-#    reconstructed_wavefront_y = zern.eval_grid(coeffs_y, matrix=True)
-#
-#    reconstructed_wavefront = reconstructed_wavefront_x + reconstructed_wavefront_y
-#
-#    plt.figure(figsize=(12,6))
-#    plt.subplot(1, 2, 1)
-#    plt.imshow(reconstructed_wavefront, origin='lower', extent=(-1, 1, -1, 1))
-#    plt.colorbar()
-#    plt.title('Reconstructed Wavefront')
-#
-#    plt.subplot(1, 2, 2)
-#    plt.plot(range(1, zern.nk + 1), coeffs_x, marker='.', label='X Coeffs')
-#    plt.plot(range(1, zern.nk + 1), coeffs_y, marker='.', label='Y Coeffs')
-#    plt.legend()
-#    plt.title('Zernike Coefficients')
-#
-#    plt.show()
-
-#%%

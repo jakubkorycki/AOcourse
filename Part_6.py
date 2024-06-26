@@ -10,10 +10,12 @@ from camera.ueye_camera import uEyeCamera
 from dm.okotech.dm import OkoDM
 import time
 import os
+from skimage.feature import canny
+from skimage.transform import hough_line, hough_line_peaks, radon
+
 
 from pathlib import Path
 os.chdir(Path(__file__).parent)
-#from zernike import RZern
 from zern.zern import noll2nm, zernike_cartesian
 
 # Set the path for DLL loading
@@ -142,10 +144,9 @@ def normalize_reference_grid_to_unit_circle(reference_grid, padding=0.0, center 
     reference_grid_scaled = reference_grid_centered*scale
     return reference_grid_scaled, center, scale
 
-def crop_grid_to_square(grid, square_size):
-    cx, cy = np.mean(grid[:, 0], axis=0), np.mean(grid[:, 1], axis=0)
-    dx, dy = np.max(grid[:, 0]) - cx, np.max(grid[:, 1]) - cy
-    return grid[(grid[:, 0] > cx - dx/2 - square_size) & (grid[:, 0] < cx - dx/2 + square_size) & (grid[:, 1] > cy - dy/2 - square_size) & (grid[:, 1] < cy - dy/2 + square_size)]
+def crop_grid_to_square(grid, square_size,):
+    dx, dy = np.max(grid[:, 0]), np.max(grid[:, 1])
+    return grid[(grid[:, 0] > cx - dx/2 - square_size) & (grid[:, 0] < cx - dx/2 + square_size) & (grid[:, 1] > cy - dy/2 - square_size) & (grid[:, 1] < cy - dy/2 + square_size)], (cx,cy)
 
 def create_B_matrix(reference_grid_normalized, n_modes):
     lowest_mode = 2
@@ -162,6 +163,57 @@ def create_B_matrix(reference_grid_normalized, n_modes):
     B = np.linalg.pinv(zernike_gradients.T)
     np.savetxt(f"B_matrix.csv", B)
     return B
+
+def calculate_rotation_angle_v2(image):
+    edges = canny(np.array(image), sigma=3)
+    h, theta, d = hough_line(edges) 
+    accum, angles, dists = hough_line_peaks(h, theta, d)
+    mode_angle = np.rad2deg(np.median(angles))
+    rotation_adjustment = (mode_angle + 90) % 180
+    return rotation_adjustment
+
+def find_rotation_angle(grid):
+#    xcoords = np.array([pos[0] for pos in dot_positions]).reshape(-1, 1)
+#    ycoords = np.array([pos[1] for pos in dot_positions])
+#    model = LinearRegression().fit(xcoords, ycoords)
+#    angle = np.arctan(model.coef_[0])
+#    img = np.array(img)
+#    theta = np.linspace(0., 180., np.max(img.shape), endpoint=False)
+#    sinogram = radon(img, theta=theta)
+#    
+#    rotation_angle = np.argmax(np.sum(sinogram, axis=0))
+#    if rotation_angle > 90:
+#        rotation_angle -= 180  # Adjust angle to be within -90 to 90 degrees
+    
+    p1 = grid[32]
+    p2 = grid[33]
+    dx = p2[0]-p1[0]
+    dy = p2[1]-p1[1]
+    rotation_angle = np.arctan(dy/dx)
+
+    return rotation_angle
+
+def rotate_grid(grid, angle):
+    rotation_matrix = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
+    rotated_coords = grid@rotation_matrix
+    return rotated_coords
+    
+
+
+def find_centroid(img):
+    img = np.array(img)
+    M = cv2.moments(img)
+    x0 = int(M["m10"] / M["m00"])
+    y0 = int(M["m01"] / M["m00"])
+    return x0, y0
+
+def rotate_img(img, angle):
+    h, w = img.shape
+    center = find_centroid(img)
+    M = cv2.getRotationMatrix2D(center, angle, 1.0)
+    newimg = cv2.warpAffine(img, M, (w, h))
+    return newimg
+
 
 
 def normalize_grids(reference_grid, distorted_grid):
@@ -309,9 +361,28 @@ if __name__ == "__main__":
             print("Reference grid loaded from file")
         else:
             reference_grid = create_reference_grid(dm=dm, camera=sh_camera)
+#            img = create_reference_image(dm=dm, camera=sh_camera)
+#            rotation_angle =find_rotation_angle(img)
+#            print(f"Angle: {rotation_angle} deg")
+#            img = rotate_img(img, rotation_angle)
+#            reference_grid = detect_blobs(img, show=False)
+#            reference_grid = filter_points_by_neighbors(reference_grid)
+            
+            
+            
+#            reference_grid, center = crop_grid_to_square(reference_grid, 225)
+            
             print("Reference grid measured")
         
         reference_grid_normalized, _, _ = normalize_reference_grid_to_unit_circle(reference_grid)
+        
+        rotation_angle = find_rotation_angle(reference_grid_normalized)
+        reference_grid_rot = rotate_grid(reference_grid_normalized, rotation_angle)
+#        reference_grid_rot, center = crop_grid_to_square(reference_grid_rot, 0.6)
+        print(rotation_angle)
+        plt.scatter(reference_grid_rot[:,0], reference_grid_rot[:, 1])
+        plt.show()
+        
         
         # Decide whether to load from file or generate B and C matrices
         if False:
@@ -324,7 +395,7 @@ if __name__ == "__main__":
         
         '''Sometimes dimensions don't match due to dropout, requiring recalculation every time. \
         Maybe there's a way to prevent that?'''
-        if False:
+        if True:
             C_matrix = np.loadtxt("C_matrix.csv")
             print("C matrix loaded from file")
         else:
@@ -343,7 +414,7 @@ if __name__ == "__main__":
             dm.setActuators(rand_act)
             time.sleep(0.1)
             distorted_grid = get_current_grid(sh_camera)
-            
+            distorted_grid = crop_grid_to_square(distorted_grid, 225, center=center)
     
             # Matching grid and normalizing
             reference_grid, distorted_grid = NearestNeighbor(reference_grid, distorted_grid)
@@ -352,24 +423,25 @@ if __name__ == "__main__":
             grid_size = 500
             
             # Plot wavefront of rand_act
-            wavefront = reconstruct_wavefront(B_matrix, slopes, n_modes=20, gridsize=grid_size)
+            wavefront = reconstruct_wavefront(B_matrix, slopes, n_modes=15, gridsize=grid_size)
             plot_wavefront(wavefront, reference_grid_normalized, distorted_grid_normalized)
             plt.show()
 
         
-        '''Control mirror to achieve wf corresponding to desired zernike coeffs'''
-        n_modes = 12
-        zernike_coeffs = np.zeros(n_modes)
-        zernike_coeffs[1] = 0.1
-        voltages, current_grid_normalized = converge_to_zernike(dm, sh_camera, reference_grid, C_matrix, zernike_coeffs, n_modes, ref_volt = optimized_act)
-        
-        dm.setActuators(voltages)
-        time.sleep(0.1)
-        
-        slopes = get_current_slopes(reference_grid, sh_camera)
-        print(slopes)
-        
-        grid_size = 500
-        wavefront = reconstruct_wavefront(B_matrix, slopes, n_modes=20, gridsize=grid_size)
-        plot_wavefront(wavefront, reference_grid_normalized, current_grid_normalized)
-        
+#        '''Control mirror to achieve wf corresponding to desired zernike coeffs'''
+#        if False:
+#            n_modes = 12
+#            zernike_coeffs = np.zeros(n_modes)
+#            zernike_coeffs[1] = 0.1
+#            voltages, current_grid_normalized = converge_to_zernike(dm, sh_camera, reference_grid, C_matrix, zernike_coeffs, n_modes, ref_volt = optimized_act)
+#            
+#            dm.setActuators(voltages)
+#            time.sleep(0.1)
+#            
+#            slopes = get_current_slopes(reference_grid, sh_camera)
+#            print(slopes)
+#            
+#            grid_size = 500
+#            wavefront = reconstruct_wavefront(B_matrix, slopes, n_modes=20, gridsize=grid_size)
+#            plot_wavefront(wavefront, reference_grid_normalized, current_grid_normalized)
+#        

@@ -16,7 +16,7 @@ import copy
 import time
 
 import os
-os.environ['PATH'] = "C:\\AO-course-2024\\dm\okotech\\okodm_sdk\\python" + os.pathsep + os.environ['PATH']
+#os.environ['PATH'] = "C:\\AO-course-2024\\dm\okotech\\okodm_sdk\\python" + os.pathsep + os.environ['PATH']
 
 #os.add_dll_directory("C:\\AO-course-2023\\dm\okotech\\okodm_sdk")
 
@@ -94,51 +94,61 @@ if __name__ == "__main__":
         act = np.zeros([len(dm)])
         dm.setActuators(act)
         img=grabframes(5)
-        imsave(f"C:\\AO-course-2024\\part_3\\frames\\frame_0.png", img[-1])
-        np.savetxt(f"C:\\AO-course-2024\\part_3\\raw\\frame_0.dat", img[-1])
-        max_val = np.max(img[-1])
+        imsave(f"C:\\AO-course-2024\\group1_code\\AOcourse\\part_3_new\\frame_0.png", img[-1])
+#        np.savetxt(f"C:\\AO-course-2024\\group1_code\\AOcourse\\part_3_new\\frame_0.dat", img[-1])
+        max_val = width(img[-1])
         
         # Run random walk loop
-        if False:
+        if True:
             act=np.zeros([len(dm)])
             metriclist = []
-            for i in range(500):
+            improved_images = []
+            
+            for i in range(1000):
                 # Pick random actuator, including tip-tilt for now
                 rand_act_id = np.random.randint(0, len(dm))
                 act_new = copy.copy(act)
+                
                 if abs(act_new[rand_act_id]) < 1.0:
-                    act_new[rand_act_id] += 0.2 * np.random.randint(-1, 2)
+                    act_new[rand_act_id] += 0.1 * np.random.randint(-1, 2)
                     
                 dm.setActuators(act_new)
                 time.sleep(0.1)
-                img=grabframes(5)
+                img=grabframes(4)
                 new_max = width(img[-1])
                 
                 if new_max < max_val:
                     act = act_new
-                    metriclist.append(new_max)
-                    max_val =  width(img[-1])
+                    max_val = new_max
+                    improved_images.append(i)
                     print("\nIMPROVED")
-                    print(act)
+                    print(act, max_val)
                     
-                    imsave(f"C:\\AO-course-2024\\part_3\\frames\\frame_{i}.png", img[-1])
-                    np.savetxt(f"C:\\AO-course-2024\\part_3\\raw\\frame_{i}.dat", img[-1])
-                    
-                    if new_max >= 255:
+                    if np.max(img[-1]) >= 255:
                         print('Camera is saturated')
-                        np.savetxt(f"C:\\AO-course-2024\\part_3\\final_actuator_values.dat", act)
+                        np.savetxt(f"C:\\AO-course-2024\\group1_code\\AOcourse\\part_3_new\\final_actuator_values.dat", act)
+                        np.savetxt(f"C:\\AO-course-2024\\group1_code\\AOcourse\\part_3_new\\improved_images.dat", improved_images)
                         break
-                    print(i)
+                    
+                print(i)
+                metriclist.append(new_max)
+                imsave(f"C:\\AO-course-2024\\group1_code\\AOcourse\\part_3_new\\frame_{i}.png", img[-1])
+#                np.savetxt(f"C:\\AO-course-2024\\group1_code\\AOcourse\\part_3_new\\frame_{i}.dat", img[-1])
+                    
+                   
             # Save last, most corrected actuator voltages
-            np.savetxt(f"C:\\AO-course-2024\\part_3\\final_actuator_values.dat", act)
+            np.savetxt(f"C:\\AO-course-2024\\group1_code\\AOcourse\\part_3_new\\final_actuator_values.dat", act)
+            np.savetxt(f"C:\\AO-course-2024\\group1_code\\AOcourse\\part_3_new\\improved_images.dat", improved_images)
             plt.figure()
             plt.plot(metriclist)
+            plt.plot(improved_images, np.array(metriclist)[improved_images], '.', c='tab:red')
             plt.title("Metric vs number of iterations")
             plt.xlabel("Steps")
-            plt.ylabel("max(I(x,y))")
-            plt.savefig(f"C:\\AO-course-2024\\part_3\\metric_graph.png")
+            plt.ylabel("PSF width")
+            plt.savefig(f"C:\\AO-course-2024\\group1_code\\AOcourse\\part_3_new\\metric_graph.png", dpi=300)
+            
         # Set random initial values (including tip-tilt)
-        if True:
+        if False:
             for i in range(20):
                 act = np.random.uniform(-1,1,size=len(dm))
                 print(f"Generating random initial position {i+1}")

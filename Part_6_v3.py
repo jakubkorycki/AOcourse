@@ -59,7 +59,7 @@ def detect_blobs(img, show=False, index=-1):
     params = cv2.SimpleBlobDetector_Params()
     params.filterByArea = True
     params.blobColor = 255
-    params.minArea = 28
+    params.minArea = 25
     params.maxArea = 1000
     params.filterByCircularity = True
     params.minCircularity = 0.1
@@ -182,7 +182,12 @@ def interpolate_missing_spots(current_grid, reference_grid):
     missing_indices = [i for i in range(len(reference_grid)) if not np.any(tree.query_ball_point(reference_grid[i], r=25))]
     interpolated_points = griddata(current_grid, current_grid, reference_grid[missing_indices], method='cubic')
     print(f'Interpolated {len(interpolated_points)} points.\n')
-    return np.vstack([current_grid, interpolated_points])
+    if len(interpolated_points) > 2:
+        np.savetxt('interpolated_grid.dat', np.vstack([current_grid, interpolated_points]))
+    
+#    interpolated_grid = NearestNeighbor(reference_grid, np.vstack([current_grid, interpolated_points]))
+    interpolated_grid = np.vstack([current_grid, interpolated_points])
+    return interpolated_grid
 
 def find_centroid(img):
     img = np.array(img)
@@ -423,6 +428,11 @@ if __name__ == "__main__":
             reference_grid = create_reference_grid(dm=dm, camera=sh_camera)
 
         reference_grid_normalized, _, _ = normalize_reference_grid_to_unit_circle(reference_grid)  
+        
+        if False:
+            current_grid = np.loadtxt('interpolated_grid.dat')
+            plt.clf()
+            plot_displacement(reference_grid, current_grid)
         
         # Decide whether to load from file or generate B and C matrices
         if False:

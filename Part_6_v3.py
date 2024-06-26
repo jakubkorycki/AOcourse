@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from scipy.spatial import cKDTree
+from scipy.interpolate import griddata
 #from scipy.interpolate import griddata
 #from sklearn.preprocessing import normalize
 import matplotlib.pyplot as plt
@@ -58,7 +59,7 @@ def detect_blobs(img, show=False, index=-1):
     params = cv2.SimpleBlobDetector_Params()
     params.filterByArea = True
     params.blobColor = 255
-    params.minArea = 25
+    params.minArea = 28
     params.maxArea = 1000
     params.filterByCircularity = True
     params.minCircularity = 0.1
@@ -167,40 +168,21 @@ def create_B_matrix(reference_grid_normalized, n_modes):
     np.savetxt("B_matrix.csv", B)
     return B, zernike_gradients
 
-def calculate_rotation_angle_v2(image):
-    edges = canny(np.array(image), sigma=3)
-    h, theta, d = hough_line(edges) 
-    accum, angles, dists = hough_line_peaks(h, theta, d)
-    mode_angle = np.rad2deg(np.median(angles))
-    rotation_adjustment = (mode_angle + 90) % 180
-    return rotation_adjustment
-
 def find_rotation_angle(grid):
-#    xcoords = np.array([pos[0] for pos in dot_positions]).reshape(-1, 1)
-#    ycoords = np.array([pos[1] for pos in dot_positions])
-#    model = LinearRegression().fit(xcoords, ycoords)
-#    angle = np.arctan(model.coef_[0])
-#    img = np.array(img)
-#    theta = np.linspace(0., 180., np.max(img.shape), endpoint=False)
-#    sinogram = radon(img, theta=theta)
-#    
-#    rotation_angle = np.argmax(np.sum(sinogram, axis=0))
-#    if rotation_angle > 90:
-#        rotation_angle -= 180  # Adjust angle to be within -90 to 90 degrees
-    
     p1 = grid[32]
     p2 = grid[33]
     dx = p2[0]-p1[0]
     dy = p2[1]-p1[1]
     rotation_angle = np.arctan(dy/dx)
-
     return rotation_angle
 
-def rotate_grid(grid, angle):
-    rotation_matrix = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
-    rotated_coords = grid@rotation_matrix
-    return rotated_coords
+def interpolate_missing_spots(current_grid, reference_grid):
+    tree = cKDTree(current_grid)
     
+    missing_indices = [i for i in range(len(reference_grid)) if not np.any(tree.query_ball_point(reference_grid[i], r=25))]
+    interpolated_points = griddata(current_grid, current_grid, reference_grid[missing_indices], method='cubic')
+    print(f'Interpolated {len(interpolated_points)} points.\n')
+    return np.vstack([current_grid, interpolated_points])
 
 def find_centroid(img):
     img = np.array(img)
@@ -222,6 +204,7 @@ def normalize_grids(reference_grid, distorted_grid):
     distorted_grid_normalized, _, _ = normalize_reference_grid_to_unit_circle(distorted_grid, center=center, scale=scale)
     return reference_grid_normalized, distorted_grid_normalized
 
+
 def get_slopes(reference_grid_normalized, distorted_grid_normalized):
     displacements = (reference_grid_normalized - distorted_grid_normalized).flatten()
     return displacements
@@ -235,7 +218,7 @@ def get_current_grid(camera):
 
 def reconstruct_wavefront(B, displacements, n_modes=10, gridsize=500):
     lowest_mode = 2
-    coefficients = B @ displacements # questionable usage of - #TODO!
+    coefficients = B @ displacements
     x = np.linspace(-1, 1, gridsize)
     y = np.linspace(-1, 1, gridsize)
     X, Y = np.meshgrid(x, y)
@@ -353,14 +336,17 @@ def calculate_desired_slope_pattern(zernike_coeffs, reference_grid, n_modes):
     return desired_slope_pattern
 
 def calculate_desired_voltages(C, slope_pattern):
-    return -slope_pattern @ C
-#    return C @ -slope_pattern
+#    return -slope_pattern @ C
+    return C @ -slope_pattern
 
 def get_current_slopes(reference_grid, camera, iteration):
     current_image = camera.grab_frames(4)[-1]
     current_grid = detect_blobs(current_image, index=iteration, show=True)
     current_grid = filter_points_by_neighbors(current_grid)
+    
+    current_grid = interpolate_missing_spots(current_grid, reference_grid)
     reference_grid, current_grid = NearestNeighbor(reference_grid, current_grid)
+    
     reference_grid_normalized, current_grid_normalized = normalize_grids(reference_grid, current_grid)
     return get_slopes(reference_grid_normalized, current_grid_normalized)
 
@@ -397,15 +383,15 @@ def converge_to_zernike(dm, camera, reference_grid, C, zernike_coeffs, n_modes, 
 #        current_grid = get_current_grid(camera)
 #        reference_grid, current_grid = NearestNeighbor(reference_grid, current_grid)
 #        print("N_dots", reference_grid.shape, current_grid.shape)
-        try:
-            print(f"1 slope difference: {np.sum(np.abs(desired_slope_pattern - current_slopes))}")
-    #            unew = ucur - 0.2 * 0.5 * C@s_cur
-            voltage_correction = np.clip(calculate_desired_voltages(C, desired_slope_pattern - current_slopes), -1.0, 1.0)
-            previous_slopes = current_slopes
+#        try:
+        print(f"1 slope difference: {np.sum(np.abs(desired_slope_pattern - current_slopes))}")
+#            unew = ucur - 0.2 * 0.5 * C@s_cur
+        voltage_correction = np.clip(calculate_desired_voltages(C, desired_slope_pattern - current_slopes), -1.0, 1.0)
+        previous_slopes = current_slopes
             
-        except:
-            print(f"2 slope difference: {np.sum(np.abs(desired_slope_pattern - current_slopes))}")
-            voltage_correction = np.clip(calculate_desired_voltages(C, desired_slope_pattern - previous_slopes), -1.0, 1.0)
+#        except:
+#            print(f"2 slope difference: {np.sum(np.abs(desired_slope_pattern - current_slopes))}")
+#            voltage_correction = np.clip(calculate_desired_voltages(C, desired_slope_pattern - previous_slopes), -1.0, 1.0)
             
 #        print(f"Voltage correction: {voltage_correction}")
         current_voltages = update_voltages(dm, 0.5, current_voltages, voltage_correction)
@@ -430,7 +416,7 @@ if __name__ == "__main__":
         optimized_act = np.loadtxt(f"C:\\AO-course-2024\\part_4\\last_x.dat")[0]
         n_modes = 15
         
-        if True:
+        if False:
             reference_grid = np.loadtxt("reference_grid.csv")
             print("Reference grid loaded from file")
         else:
@@ -478,10 +464,10 @@ if __name__ == "__main__":
             plt.show()
             
         '''Testing C matrix construction'''
-        if True:
+        if False:
             for ii, slopes in enumerate(slopes_data[:10]):
                 print()
-                print(slopes @ C.T)
+                print(slopes @ C_matrix.T)
                 print(voltages[ii])
             
             
@@ -491,7 +477,7 @@ if __name__ == "__main__":
             grid_size = 500
 
             zernike_coeffs = np.zeros(n_modes)
-            index = 0
+            index = 1
             zernike_coeffs[index] = 0.8e-1 if index <2 else 3e-2
             
             desired_slopes = calculate_desired_slope_pattern(zernike_coeffs, reference_grid_normalized, n_modes)
@@ -505,9 +491,9 @@ if __name__ == "__main__":
             
         
         '''Control mirror to achieve wf corresponding to desired zernike coeffs'''
-        if False:
+        if True:
             zernike_coeffs = np.zeros(n_modes)
-#            index = 0
+            index = 0
             zernike_coeffs[index] = 0.8e-1 if index <2 else 3e-2 # Normalize coefficients? #TODO!
             
             voltages, slopes = converge_to_zernike(dm, sh_camera,   reference_grid,\

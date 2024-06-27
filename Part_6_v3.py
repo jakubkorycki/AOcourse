@@ -176,18 +176,18 @@ def find_rotation_angle(grid):
     rotation_angle = np.arctan(dy/dx)
     return rotation_angle
 
-def interpolate_missing_spots(current_grid, reference_grid):
-    tree = cKDTree(current_grid)
-    
-    missing_indices = [i for i in range(len(reference_grid)) if not np.any(tree.query_ball_point(reference_grid[i], r=25))]
-    interpolated_points = griddata(current_grid, current_grid, reference_grid[missing_indices], method='cubic')
-    print(f'Interpolated {len(interpolated_points)} points.\n')
-    if len(interpolated_points) > 2:
-        np.savetxt('interpolated_grid.dat', np.vstack([current_grid, interpolated_points]))
-    
-#    interpolated_grid = NearestNeighbor(reference_grid, np.vstack([current_grid, interpolated_points]))
-    interpolated_grid = np.vstack([current_grid, interpolated_points])
-    return interpolated_grid
+#def interpolate_missing_spots(current_grid, reference_grid):
+#    tree = cKDTree(current_grid)
+#    
+#    missing_indices = [i for i in range(len(reference_grid)) if not np.any(tree.query_ball_point(reference_grid[i], r=25))]
+#    interpolated_points = griddata(current_grid, current_grid, reference_grid[missing_indices], method='cubic')
+#    print(f'Interpolated {len(interpolated_points)} points.\n')
+#    if len(interpolated_points) > 2:
+#        np.savetxt('interpolated_grid.dat', np.vstack([current_grid, interpolated_points]))
+#    
+##    interpolated_grid = NearestNeighbor(reference_grid, np.vstack([current_grid, interpolated_points]))
+#    interpolated_grid = np.vstack([current_grid, interpolated_points])
+#    return interpolated_grid
 
 def find_centroid(img):
     img = np.array(img)
@@ -349,7 +349,7 @@ def get_current_slopes(reference_grid, camera, iteration):
     current_grid = detect_blobs(current_image, index=iteration, show=True)
     current_grid = filter_points_by_neighbors(current_grid)
     
-    current_grid = interpolate_missing_spots(current_grid, reference_grid)
+#    current_grid = interpolate_missing_spots(current_grid, reference_grid)
     reference_grid, current_grid = NearestNeighbor(reference_grid, current_grid)
     
     reference_grid_normalized, current_grid_normalized = normalize_grids(reference_grid, current_grid)
@@ -416,7 +416,7 @@ def converge_to_zernike(dm, camera, reference_grid, C, zernike_coeffs, n_modes, 
 if __name__ == "__main__": 
     plt.close('all')
     with OkoDM(dmtype=1) as dm:
-        sh_camera = Camera(camera_index=2, exposure=1.1)
+        sh_camera = Camera(camera_index=2, exposure=1)
         normal_camera = Camera(camera_index=1, exposure=0.5)
         optimized_act = np.loadtxt(f"C:\\AO-course-2024\\part_4\\last_x.dat")[0]
         n_modes = 15

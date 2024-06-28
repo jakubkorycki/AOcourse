@@ -236,10 +236,10 @@ if __name__ == "__main__":
 ###        plt.hist(img.flatten(), bins=256, range=(0, 256), density=True,)
 ###        plt.show()
 #        plt.imshow(croppedimg)
-        try:
+        if False:
             initial_x = np.loadtxt(f"C:\\AO-course-2024\\part_4\\last_x.dat")
             initial_f = np.loadtxt(f"C:\\AO-course-2024\\part_4\\last_f.dat")
-        except:
+        else:
             initial_x = np.loadtxt(f"C:\\AO-course-2024\\part_4\\initial_x.dat")
             initial_f = np.loadtxt(f"C:\\AO-course-2024\\part_4\\initial_f.dat")
 #
@@ -247,12 +247,12 @@ if __name__ == "__main__":
 #        initial_f = np.loadtxt(f"C:\\AO-course-2024\\part_4\\initial_f.dat")
 
         print(initial_f)
-        metric = simplex(initial_x, initial_f)
+#        metric = simplex(initial_x, initial_f)
         
 
-#        metric = np.loadtxt(f"C:\\AO-course-2024\\part_4\\metric.dat")
-#        plt.close('all')
-#        plt.plot(range(len(metric)), metric)
-#        plt.xlabel("Iterations")
-#        plt.ylabel("PSF radius [px]")
-#        plt.savefig("C:\\AO-course-2024\\part_4\\metric.png")
+        metric = np.loadtxt(f"C:\\AO-course-2024\\part_4\\metric.dat")
+        plt.close('all')
+        plt.plot(range(len(metric)), metric)
+        plt.xlabel("Iterations")
+        plt.ylabel("PSF radius [px]")
+        plt.savefig("C:\\AO-course-2024\\part_4\\metric.png")

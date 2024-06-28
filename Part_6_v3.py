@@ -116,7 +116,7 @@ def plot_displacement(reference_grid, distorted_grid):
     plt.scatter(distorted_grid[:, 0], distorted_grid[:, 1], 5, c='green')
     for i, dot in enumerate(distorted_grid):
         plt.plot([reference_grid[i, 0], distorted_grid[i, 0]], [reference_grid[i, 1], distorted_grid[i, 1]], '-', c='black')
-        plt.text(reference_grid[i, 0], reference_grid[i, 1], str(i))
+#        plt.text(reference_grid[i, 0], reference_grid[i, 1], str(i))
    
 def NearestNeighbor(reference_grid, distorted_grid):
     if len(reference_grid) > len(distorted_grid):
@@ -261,18 +261,6 @@ def reconstruct_wavefront(B, displacements, n_modes=10, gridsize=500):
         wavefront += coefficients[l-lowest_mode]*zernike_cartesian(n, m, X, Y)
     return wavefront
 
-#def zernike_polynomials(coefficients, n_modes=10, gridsize=500):
-#    lowest_mode = 2
-#    x = np.linspace(-1, 1, gridsize)
-#    y = np.linspace(-1, 1, gridsize)
-#    X, Y = np.meshgrid(x, y)
-#    wavefront = np.zeros((gridsize, gridsize))
-#    for l in range(lowest_mode, n_modes):
-#        n,m = noll2nm(l)
-#        wavefront += coefficients[l-lowest_mode]*zernike_cartesian(n, m, X, Y)
-#    return wavefront
-
-
 #def create_C_matrix(dm, camera, reference_grid, voltage_step=0.5):
 #    num_actuators = 19
 #    len_grid=len(reference_grid)
@@ -371,14 +359,12 @@ def calculate_desired_slope_pattern(zernike_coeffs, reference_grid, n_modes):
     return desired_slope_pattern
 
 def calculate_desired_voltages(C, slope_pattern):
-#    return -slope_pattern @ C
     return C @ -slope_pattern
 
 def get_current_slopes(reference_grid, camera, iteration):
     current_image = camera.grab_frames(4)[-1]
     current_grid = detect_blobs(current_image, index=iteration, show=False)
     current_grid = filter_points_by_neighbors(current_grid)
-    
 #    current_grid = interpolate_missing_spots(current_grid, reference_grid)
     available_spots, reference_grid, current_grid = NearestNeighbor(reference_grid, current_grid)
     
@@ -397,63 +383,45 @@ def NormalizeVector(vect):
     norm = np.linalg.norm(vect)
     return vect / norm
 
-def converge_to_zernike(dm, camera, reference_grid, C, zernike_coeffs, n_modes, max_iterations=20, tolerance=1e-4, ref_volt=None):
+def converge_to_zernike(dm, sh_camera, normal_camera, reference_grid, C, zernike_coeffs, n_modes, max_iterations=20, tolerance=1e-4, ref_volt=None):
     desired_slope_pattern = calculate_desired_slope_pattern(zernike_coeffs, reference_grid, n_modes)
+    RMS_values = []
     print(desired_slope_pattern[:20])
 #    print(desired_slope_pattern) # Checked for tip, tilt modes and it seems correct
     
-    # desired_voltages = calculate_desired_voltages(C, desired_slope_pattern)
     current_voltages = np.zeros(19)
-#    current_voltages = optimized_act
-    
-    # Commented for now to test
-#    if ref_volt is not None:
-#        current_voltages[-2:] = ref_volt[-2:]
     dm.setActuators(current_voltages)
     time.sleep(0.1)
-#    previous_slopes = np.linalg.pinv(C) @ optimized_act
 
     for iteration in range(max_iterations):
-#        available_spots, current_slopes, current_grid = get_current_slopes(reference_grid, camera, iteration)
-        current_grid = get_current_grid(camera)
+        current_grid = get_current_grid(sh_camera)
         reference_grid_normalized, current_grid_normalized = normalize_grids(reference_grid, current_grid)
         print(current_grid.shape)
-        reference_spots, current_spots = find_missing_indices(reference_grid, current_grid)
         
+        reference_spots, current_spots = find_missing_indices(reference_grid, current_grid)
         current_slopes = get_slopes(reference_grid_normalized[reference_spots], current_grid_normalized[current_spots])
-#        current_grid = filter_points_by_neighbors(current_grid)
-#        missing_spots, available_spots = find_missing_indices(reference_grid, current_grid)
-#        available_spots, reference_grid, current_grid = missing_indices(reference_grid, current_grid)
         
         desired_slope_pattern_av = desired_slope_pattern.reshape(-1, 2)[reference_spots].flatten()
         
         if iteration % 5 == 0:
+            psf = normal_camera.grab_frames(4)[-1]
+            plt.figure()
+            plt.imshow(psf)
+            plt.show
+            
             plt.figure()
             plot_displacement(reference_grid[reference_spots], current_grid[current_spots])
             plt.show()
-#        
-##    current_grid = interpolate_missing_spots(current_grid, reference_grid)
-#        reference_grid, current_grid = NearestNeighbor(reference_grid, current_grid)
-#        
-#        reference_grid_normalized, current_grid_normalized = normalize_grids(reference_grid, current_grid)
-#        current_slopes = get_slopes(reference)
-#        reference_grid, current_grid = NearestNeighbor(reference_grid, current_grid)
-#        print("N_dots", reference_grid.shape, current_grid.shape)
-#        try:
-       
-#            unew = ucur - 0.2 * 0.5 * C@s_cur
+
         cols_to_keep = []
         for i in reference_spots:
             cols_to_keep.extend([i*2, i*2+1])
-        print(f"slope difference: {np.linalg.norm(desired_slope_pattern_av - current_slopes)}")
+        
+        RMS = np.linalg.norm(desired_slope_pattern_av - current_slopes)
+        RMS_values.append(RMS)
+        print(f"slope difference: {RMS}")
         C_av = C[:, cols_to_keep]
         voltage_correction = np.clip(calculate_desired_voltages(C_av, desired_slope_pattern_av - current_slopes), -1.0, 1.0)
-#        previous_slopes = current_slopes
-            
-#        except:
-#            print(f"2 slope difference: {np.sum(np.abs(desired_slope_pattern - current_slopes))}")
-#            voltage_correction = np.clip(calculate_desired_voltages(C, desired_slope_pattern - previous_slopes), -1.0, 1.0)
-            
 #        print(f"Voltage correction: {voltage_correction}")
         current_voltages = update_voltages(dm, 0.1, current_voltages, voltage_correction)
         if np.linalg.norm(voltage_correction) < tolerance:
@@ -466,7 +434,7 @@ def converge_to_zernike(dm, camera, reference_grid, C, zernike_coeffs, n_modes, 
     
     print("final", current_voltages.shape)
         
-    return current_voltages, current_slopes, reference_spots, current_spots
+    return current_voltages, current_slopes, reference_spots, current_spots, RMS_values
     
     
 
@@ -478,8 +446,9 @@ if __name__ == "__main__":
         normal_camera = Camera(camera_index=1, exposure=0.5)
         optimized_act = np.loadtxt(f"C:\\AO-course-2024\\part_4\\last_x.dat")[0]
         n_modes = 15
+        
 
-        if False:
+        if True:
             reference_grid = np.loadtxt("reference_grid.csv")
             print("Reference grid loaded from file")
         else:
@@ -532,7 +501,6 @@ if __name__ == "__main__":
                 print(voltages[ii])
             
             
-            
         """Testing convergence algorithm"""
         if False:
             grid_size = 500
@@ -548,46 +516,43 @@ if __name__ == "__main__":
             plot_wavefront(wavefront, reference_grid_normalized, reference_grid_normalized+desired_slopes)
             plt.show()
              
-            
-            
         
         '''Control mirror to achieve wf corresponding to desired zernike coeffs'''
         if True:
             zernike_coeffs = np.zeros(n_modes)
-            index = 1
+            index = 6
             zernike_coeffs[index] = 0.5e-1 if index <2 else 5e-3 # Normalize coefficients? #TODO!
             
-            voltages, slopes, reference_spots, current_spots = converge_to_zernike(dm, sh_camera,   reference_grid,\
+            final_voltages, slopes, reference_spots, current_spots, RMS_values = converge_to_zernike(dm, sh_camera, normal_camera, reference_grid,\
                                                                     C_matrix, \
                                                                     zernike_coeffs,\
                                                                     n_modes, \
-                                                                    max_iterations=30,\
-                                                                    ref_volt = optimized_act)
-            
-            #%%
-            
+                                                                    max_iterations=40,\
+                                                                    ref_volt = optimized_act)            
+            np.savetxt(f"C:\AO-course-2024\group1_code\AOcourse\part_6\mode_{str(index)}\\RMS_values.dat", RMS_values)
+
             B_matrix, zernike_gradients = create_B_matrix(reference_grid_normalized[reference_spots], n_modes)
-            
-#            dm.setActuators(voltages)
-#            time.sleep(0.1)
-            
-#            _, slopes, _ = get_current_slopes(reference_grid, sh_camera, iteration=50)
-#            print("\n\n", slopes)
-            
             grid_size = 500
             wavefront = reconstruct_wavefront(B_matrix, slopes, n_modes=n_modes, gridsize=grid_size)
             plot_wavefront(wavefront, reference_grid_normalized[reference_spots], reference_grid_normalized[reference_spots]+np.reshape(slopes, (-1, 2)))
             
-            #%%
-#    lowest_mode = 2
-#    x = np.linspace(-1, 1, grid_size)
-#    y = np.linspace(-1, 1, grid_size)
-#    X, Y = np.meshgrid(x, y)
-#    wavefront = np.zeros((grid_size, grid_size))
-#    for l in range(lowest_mode, n_modes+lowest_mode):
-#        n,m = noll2nm(l)
-#        wavefront += zernike_coeffs[l-lowest_mode]*zernike_cartesian(n, m, X, Y)
-#        
-#    plot_wavefront(wavefront, reference_grid_normalized[reference_spots], reference_grid_normalized[reference_spots]+np.reshape(slopes, (-1, 2)))
-
+#            #%%
+#            index = 6
+#            zernike_coeffs = np.zeros(n_modes)
+#            zernike_coeffs[index] = 1e-1 if index <2 else 5e-3 # Normalize coefficients? #TODO!
+#            lowest_mode = 2
+#            
+#            x = np.linspace(-1, 1, grid_size)
+#            y = np.linspace(-1, 1, grid_size)
+#            X, Y = np.meshgrid(x, y)
+#            wavefront = np.zeros((grid_size, grid_size))
+#            
+#            for l in range(lowest_mode, n_modes+lowest_mode):
+#                n,m = noll2nm(l)
+#                print(zernike_coeffs[l-lowest_mode])
+#                wavefront += zernike_coeffs[l-lowest_mode]*zernike_cartesian(n, m, X, Y)
+#            
+#            plt.clf()
+#            plt.imshow(wavefront)
+#            plt.colorbar()
             
